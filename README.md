@@ -46,7 +46,7 @@
 2. **Authentication > Sign-in method**: فعّل Email/Password.
 3. **Firestore Database**: أنشئ قاعدة (وضع الإنتاج).
 4. **Storage**: فعّله. تحقق من خطتك الحالية ومتطلباتها في صفحة Firebase للأسعار قبل الاعتماد عليه (قد يتطلب خطة بفوترة)؛ لم أتحقق من ذلك لحسابك.
-5. **Project settings > Your apps**: أضف تطبيق Android بالمعرّف `jo.guide.app` (و`jo.guide.app.debug` للنسخة التجريبية) ونزّل `google-services.json`.
+5. **Project settings > Your apps**: أضف تطبيق Android بالمعرّف `jo.guide.app` (النسخة التجريبية تستخدم المعرّف نفسه) ونزّل `google-services.json`.
 6. حوّل الملف إلى base64 وضعه سرًّا في GitHub باسم `GOOGLE_SERVICES_JSON_BASE64` (Settings > Secrets and variables > Actions). الـ workflow ينشئ الملف أثناء البناء ولا يُحفظ في المستودع.
 7. أضف تطبيق Web وانسخ إعداداته إلى `admin-web/firebase-config.js` (ليست أسرارًا لكنها خاصة بمشروعك).
 8. انسخ `.firebaserc.example` إلى `.firebaserc` وضع معرّف مشروعك.

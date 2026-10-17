@@ -35,6 +35,21 @@ jobs:
             echo "لا يوجد سر Firebase: سيُبنى التطبيق في وضع البيانات التجريبية."
           fi
 
+      # اختياري: مفتاح التوقيع من الأسرار (KEYSTORE_BASE64, KEYSTORE_PASSWORD) ليكون التوقيع ثابتًا.
+      - name: إعداد مفتاح التوقيع (إن وُجد السر)
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/dalil.keystore"
+            echo "::add-mask::$KS_PASS"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/dalil.keystore" >> "$GITHUB_ENV"
+            echo "KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=dalil" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+          fi
+
       - name: اختبارات الوحدة
         run: ./gradlew --no-daemon testDebugUnitTest
 

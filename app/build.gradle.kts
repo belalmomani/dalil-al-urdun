@@ -63,8 +63,9 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
+            // نفس المفتاح للنسخة التجريبية كي تبقى بصمات SHA ثابتة في Firebase.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
         release {
             isMinifyEnabled = true
