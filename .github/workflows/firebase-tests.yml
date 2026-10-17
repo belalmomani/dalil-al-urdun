@@ -1,0 +1,38 @@
+name: Firebase (اختبار الدوال والقواعد ولوحة الإدارة)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  logic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: اختبارات منطق الأدوار (Cloud Functions)
+        working-directory: functions
+        run: npm test
+      - name: اختبارات منطق لوحة الإدارة
+        working-directory: admin-web/js
+        run: node --test logic.test.js
+
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - name: اختبارات قواعد Firestore وStorage على المحاكي
+        working-directory: tests
+        run: |
+          npm install --no-audit --no-fund
+          npm test

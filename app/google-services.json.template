@@ -1,0 +1,7 @@
+{
+  "_README": "هذا قالب فقط وليس ملفًا صالحًا. نزّل ملف google-services.json الحقيقي من Firebase Console > Project settings > Your apps > Android (اسم الحزمة: jo.guide.app و jo.guide.app.debug) وضعه في app/google-services.json. الملف مستثنى في .gitignore ولا يُرفع. في GitHub Actions يُنشأ من السر GOOGLE_SERVICES_JSON.",
+  "project_info": {
+    "project_number": "ضع_رقم_المشروع_هنا",
+    "project_id": "ضع_معرف_المشروع_هنا"
+  }
+}

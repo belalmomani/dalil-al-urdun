@@ -1,0 +1,136 @@
+package jo.guide.app.auth
+
+import android.content.Context
+import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.functions.FirebaseFunctions
+import jo.guide.app.data.FirebaseStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+
+data class AuthState(
+    val configured: Boolean = false,
+    val uid: String? = null,
+    val email: String? = null,
+    val emailVerified: Boolean = false,
+    val claims: Map<String, Any?> = emptyMap(),
+    val busy: Boolean = false,
+    val message: String? = null,
+) {
+    val signedIn get() = uid != null
+    val status: AccessStatus get() = AdminAccess.evaluate(configured, signedIn, emailVerified, claims)
+}
+
+/**
+ * غلاف Firebase Authentication. الحساب اختياري: التطبيق كله يعمل للزوار.
+ * الصلاحيات تُقرأ من custom claims في ID token (يضبطها الخادم فقط) ولا يمكن للمستخدم تعديلها.
+ */
+class AuthManager(context: Context) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val configured = FirebaseStatus.isConfigured(context)
+    private val _state = MutableStateFlow(AuthState(configured = configured))
+    val state: StateFlow<AuthState> = _state.asStateFlow()
+
+    private val auth get() = FirebaseAuth.getInstance()
+
+    init {
+        if (configured) auth.addAuthStateListener { scope.launch { refresh(it.currentUser, force = false) } }
+    }
+
+    private suspend fun refresh(user: FirebaseUser?, force: Boolean) {
+        if (user == null) {
+            _state.value = AuthState(configured = true)
+            return
+        }
+        val claims = try {
+            user.getIdToken(force).await().claims
+        } catch (_: Exception) {
+            emptyMap()
+        }
+        _state.value = _state.value.copy(
+            configured = true, uid = user.uid, email = user.email,
+            emailVerified = user.isEmailVerified, claims = claims,
+        )
+    }
+
+    fun clearMessage() { _state.value = _state.value.copy(message = null) }
+
+    private fun launchOp(okMessage: String? = null, block: suspend () -> Unit) {
+        if (!configured) { _state.value = _state.value.copy(message = NOT_CONFIGURED); return }
+        scope.launch {
+            _state.value = _state.value.copy(busy = true, message = null)
+            try {
+                block()
+                _state.value = _state.value.copy(busy = false, message = okMessage)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(busy = false, message = arabicError(e))
+            }
+        }
+    }
+
+    fun signIn(email: String, password: String) = launchOp {
+        auth.signInWithEmailAndPassword(email.trim(), password).await()
+    }
+
+    fun register(email: String, password: String) = launchOp("تم إنشاء الحساب. أرسلنا رسالة تأكيد إلى بريدك.") {
+        val r = auth.createUserWithEmailAndPassword(email.trim(), password).await()
+        r.user?.sendEmailVerification()?.await()
+    }
+
+    fun resetPassword(email: String) = launchOp("إن كان البريد مسجلًا فقد أرسلنا رابط استعادة كلمة المرور.") {
+        auth.sendPasswordResetEmail(email.trim()).await()
+    }
+
+    fun resendVerification() = launchOp("أُرسلت رسالة التأكيد من جديد.") {
+        auth.currentUser?.sendEmailVerification()?.await()
+    }
+
+    /** بعد الضغط على رابط التأكيد في البريد: يحدّث حالة الحساب والـ claims. */
+    fun reload() = launchOp {
+        val u = auth.currentUser ?: return@launchOp
+        u.reload().await()
+        refresh(auth.currentUser, force = true)
+    }
+
+    fun signOut() {
+        if (configured) auth.signOut()
+    }
+
+    /**
+     * تهيئة المالك الأول: تستدعي Cloud Function (bootstrapOwner) التي تتحقق في الخادم من
+     * (١) تطابق البريد تمامًا مع ADMIN_EMAIL المضبوط في الخادم، (٢) email_verified في الـ token،
+     * ثم تضبط claim. لا شيء يُمنح من التطبيق نفسه.
+     */
+    fun bootstrapOwner() = launchOp("تمت تهيئة صلاحية المالك بنجاح.") {
+        val res = FirebaseFunctions.getInstance().getHttpsCallable("bootstrapOwner").call().await()
+        val ok = (res.data as? Map<*, *>)?.get("ok") == true
+        refresh(auth.currentUser, force = true)
+        if (!ok) error("تعذّرت التهيئة")
+    }
+
+    private fun arabicError(e: Exception): String = when (e) {
+        is FirebaseNetworkException -> "لا يوجد اتصال بالإنترنت."
+        is FirebaseAuthException -> when (e.errorCode) {
+            "ERROR_INVALID_EMAIL" -> "صيغة البريد الإلكتروني غير صحيحة."
+            "ERROR_WRONG_PASSWORD", "ERROR_INVALID_CREDENTIAL", "ERROR_USER_NOT_FOUND" -> "البريد أو كلمة المرور غير صحيحة."
+            "ERROR_EMAIL_ALREADY_IN_USE" -> "هذا البريد مسجّل مسبقًا."
+            "ERROR_WEAK_PASSWORD" -> "كلمة المرور ضعيفة (٦ أحرف على الأقل)."
+            "ERROR_TOO_MANY_REQUESTS" -> "محاولات كثيرة. حاول لاحقًا."
+            "ERROR_USER_DISABLED" -> "هذا الحساب معطّل."
+            else -> "تعذّرت العملية (${e.errorCode})."
+        }
+        else -> e.message?.takeIf { it.isNotBlank() } ?: "حدث خطأ غير متوقع."
+    }
+
+    companion object {
+        const val NOT_CONFIGURED = "لم يُربط التطبيق بمشروع Firebase بعد. راجع README لإضافة google-services.json."
+    }
+}
