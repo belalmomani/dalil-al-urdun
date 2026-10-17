@@ -23,6 +23,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # الرفع من الهاتف يُسقط صلاحية التنفيذ عن gradlew.
+      - name: صلاحية تنفيذ gradlew
+        run: chmod +x gradlew
+
       # اختياري: ملف Firebase يأتي من سر GitHub (GOOGLE_SERVICES_JSON_BASE64) ولا يُحفظ في المستودع.
       - name: إعداد google-services.json (إن وُجد السر)
         env:
