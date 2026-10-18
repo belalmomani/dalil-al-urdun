@@ -4,6 +4,5 @@
         <item name="android:windowBackground">@color/navy_dark</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLayoutDirection">rtl</item>
     </style>
 </resources>
