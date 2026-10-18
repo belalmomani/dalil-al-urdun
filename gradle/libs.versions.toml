@@ -1,5 +1,5 @@
 [versions]
-agp = "8.7.3"
+agp = "8.9.3"
 kotlin = "2.0.21"
 googleServices = "4.4.2"
 composeBom = "2024.10.01"
@@ -14,7 +14,7 @@ media3 = "1.4.1"
 junit = "4.13.2"
 # Start.io SDK: التوثيق الرسمي الحالي يستخدم com.startapp:inapp-sdk:5.+ من Maven Central.
 # بعد أول بناء ناجح في GitHub Actions ثبّت رقمًا محددًا (انظر README).
-startio = "5.+"
+startio = "5.4.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }

@@ -37,7 +37,7 @@
 ## 2) بناء APK
 
 بعد الرفع: تبويب **Actions > Android > Run workflow**. عند النجاح افتح التشغيل ونزّل الملف المرفق `dalil-al-urdun-debug-apk` (APK تجريبي). إن فشل البناء فأرسل لي نص الخطأ من سجل الخطوة الفاشلة.
-- نسخة Start.io محددة `5.+` في `gradle/libs.versions.toml`؛ بعد أول بناء ناجح ثبّتها على رقم محدد.
+- نسخة Start.io مثبّتة على `5.4.0` في `gradle/libs.versions.toml`؛
 - نسخة الإصدار الموقّعة تحتاج مفتاح توقيع تنشئه أنت وتضعه كأسرار (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`)؛ لم يُجهَّز مفتاح نيابة عنك.
 
 ## 3) ربط Firebase

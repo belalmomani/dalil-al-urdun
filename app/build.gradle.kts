@@ -32,7 +32,7 @@ val manifestForBuild: File = if (startioId.isNotEmpty()) {
 
 android {
     namespace = "jo.guide.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "jo.guide.app"
