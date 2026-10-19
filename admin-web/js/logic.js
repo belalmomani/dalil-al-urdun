@@ -9,24 +9,18 @@ export const REGION_TYPES = { governorate: 'محافظة', city: 'مدينة', t
 export const FEATURES = { parking: 'مواقف سيارات', kids_area: 'ركن أطفال', wheelchair: 'وصول لذوي الإعاقة', outdoor: 'جلسات خارجية', wifi: 'إنترنت', prayer_room: 'مصلّى' };
 export const AGE_GROUPS = { toddlers: 'رُضّع وصغار (0–3)', kids: 'أطفال (4–12)', teens: 'مراهقون (13–17)', adults: 'بالغون', seniors: 'كبار السن' };
 
-// حدود الرفع — يجب أن تطابق storage.rules (الخادم هو المرجع؛ هذه للتجربة السريعة فقط).
+// حدود الرفع — يجب أن تطابق admin-api (الخادم هو المرجع؛ هذه للتجربة السريعة فقط).
 export const LIMITS = {
   image: { maxBytes: 10 * 1024 * 1024, types: ['image/jpeg', 'image/png', 'image/webp'] },
   video: { maxBytes: 60 * 1024 * 1024, types: ['video/mp4', 'video/webm'], maxSeconds: 180 },
 };
 
-/** الدور الظاهر في الواجهة (للتجربة فقط؛ الحماية الفعلية في القواعد). */
-export function staffRole(claims, emailVerified) {
-  if (!emailVerified || !claims) return null;
-  if (claims.admin === true) return claims.owner === true ? 'owner' : 'admin';
-  if (claims.editor === true) return 'editor';
-  return null;
-}
-
 /** المحرر لا ينشر ولا يؤرشف؛ المدير يفعل كل شيء. */
 export function allowedStatuses(role) {
   return role === 'owner' || role === 'admin' ? Object.keys(STATUSES) : role === 'editor' ? ['draft', 'review'] : [];
 }
+/** الدور يأتي من الخادم (whoami) فقط؛ هنا نطبّعه للعرض. */
+export function normRole(r) { return ['owner', 'admin', 'editor'].includes(r) ? r : null; }
 export function canDelete(role) { return role === 'owner' || role === 'admin'; }
 
 const URL_RE = /^https?:\/\/[^\s]+$/i;
@@ -84,14 +78,6 @@ export function validateUpload(file, kind) {
 
 export function kindOf(file) { return file.type?.startsWith('video/') ? 'video' : 'image'; }
 
-/** اسم ملف آمن يطابق قاعدة Storage: [A-Za-z0-9._-]{1,120} */
-export function safeFileName(original, now = Date.now(), rand = Math.random()) {
-  const ext = (String(original).split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'bin';
-  return `${now}-${Math.floor(rand * 1e6).toString(36)}.${ext}`;
-}
-
-export function storagePathFor(placeId, kind, fileName) { return `places/${placeId}/${kind === 'video' ? 'videos' : 'images'}/${fileName}`; }
-
 /** تبديل موضع عنصر في القائمة وإرجاع ترتيب جديد 0..n-1 */
 export function reorder(items, from, to) {
   if (from < 0 || to < 0 || from >= items.length || to >= items.length) return items.map((m, i) => ({ ...m, order: i }));
@@ -101,18 +87,9 @@ export function reorder(items, from, to) {
   return a.map((m, i) => ({ ...m, order: i }));
 }
 
-export function slugId(name, now = Date.now()) {
-  const ascii = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30);
-  return `${ascii || 'place'}-${now.toString(36)}`;
-}
-
-export function auditEntry(action, targetPath, actorUid, extra = {}) {
-  return { action, targetPath, actorUid, ...extra };
-}
-
 export function authStatusMessage({ signedIn, emailVerified, role }) {
   if (!signedIn) return { kind: 'signin', text: 'سجّل الدخول بحساب الإدارة.' };
   if (!emailVerified) return { kind: 'verify', text: 'بريدك غير مؤكَّد. افتح رسالة التأكيد ثم اضغط «تحديث».' };
-  if (!role) return { kind: 'norole', text: 'هذا الحساب لا يملك صلاحية إدارية بعد. إن كنت المالك فاضغط «تهيئة المالك» (يتحقق الخادم من بريدك).' };
+  if (!role) return { kind: 'norole', text: 'هذا الحساب لا يملك صلاحية إدارية بعد. إن كنت المالك فتأكد أن بريدك مؤكَّد ثم اضغط «تحديث».' };
   return { kind: 'ok', text: '' };
 }

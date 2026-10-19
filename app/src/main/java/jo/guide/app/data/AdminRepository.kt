@@ -1,59 +1,38 @@
 package jo.guide.app.data
 
-import com.google.firebase.firestore.AggregateSource
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import kotlinx.coroutines.tasks.await
+import org.json.JSONObject
 
 data class AdminStats(
     val places: Long, val published: Long, val drafts: Long, val inReview: Long,
-    val users: Long, val media: Long, val openReports: Long, val pendingSuggestions: Long,
+    val regions: Long, val media: Long, val openReports: Long, val pendingSuggestions: Long,
 )
 
 data class InboxItem(val id: String, val kind: String, val title: String, val details: String, val status: String)
 
 /**
  * عمليات الإدارة داخل التطبيق (إحصائيات + صندوق البلاغات والاقتراحات).
- * كلها تمر عبر قواعد Firestore التي تتحقق من claim الإدارة؛ لو استُدعيت بحساب غير مصرّح ترفضها الخادم.
+ * كلها تمر عبر دالة admin-api التي تتحقق في الخادم من رمز Firebase وتحسب الدور؛ تُرفض لأي حساب غير مصرّح.
  */
 class AdminRepository {
-    private val db get() = FirebaseFirestore.getInstance()
-
-    private suspend fun count(q: Query): Long = q.count().get(AggregateSource.SERVER).await().count
-
     suspend fun stats(): AdminStats {
-        val places = db.collection("places")
+        val o = SupabaseApi.api("stats")
         return AdminStats(
-            places = count(places),
-            published = count(places.whereEqualTo("status", "published")),
-            drafts = count(places.whereEqualTo("status", "draft")),
-            inReview = count(places.whereEqualTo("status", "review")),
-            users = count(db.collection("users")),
-            media = count(db.collectionGroup("media")),
-            openReports = count(db.collection("reports").whereEqualTo("status", "open")),
-            pendingSuggestions = count(db.collection("suggestions").whereEqualTo("status", "pending")),
+            places = o.optLong("places"), published = o.optLong("published"), drafts = o.optLong("drafts"),
+            inReview = o.optLong("review"), regions = o.optLong("regions"), media = o.optLong("media"),
+            openReports = o.optLong("openReports"), pendingSuggestions = o.optLong("pendingSuggestions"),
         )
     }
 
     suspend fun inbox(): List<InboxItem> {
-        val reports = db.collection("reports").whereEqualTo("status", "open").limit(20).get().await().documents.map {
-            InboxItem(it.id, "reports", "بلاغ: ${it.getString("reason") ?: ""}", it.getString("details") ?: "", "open")
+        val arr = SupabaseApi.api("inbox").optJSONArray("items") ?: return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val o = arr.optJSONObject(i) ?: return@mapNotNull null
+            val id = o.str("id") ?: return@mapNotNull null
+            InboxItem(id, o.str("kind") ?: "reports", o.str("title") ?: "", o.str("details") ?: "", o.str("status") ?: "")
         }
-        val sugg = db.collection("suggestions").whereEqualTo("status", "pending").limit(20).get().await().documents.map {
-            InboxItem(it.id, "suggestions", "اقتراح: ${it.getString("name") ?: ""}", it.getString("details") ?: "", "pending")
-        }
-        return reports + sugg
     }
 
-    suspend fun resolve(item: InboxItem, uid: String) {
-        val newStatus = if (item.kind == "reports") "resolved" else "reviewed"
-        db.collection(item.kind).document(item.id).update("status", newStatus).await()
-        db.collection("audit").add(
-            mapOf(
-                "action" to "resolve_${item.kind}", "targetPath" to "${item.kind}/${item.id}",
-                "actorUid" to uid, "at" to FieldValue.serverTimestamp(),
-            )
-        ).await()
+    suspend fun resolve(item: InboxItem, @Suppress("UNUSED_PARAMETER") uid: String) {
+        SupabaseApi.api("resolve", JSONObject().put("kind", item.kind).put("id", item.id))
     }
 }

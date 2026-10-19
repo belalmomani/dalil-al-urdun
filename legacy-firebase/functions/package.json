@@ -1,0 +1,12 @@
+{
+  "name": "jordan-guide-functions",
+  "private": true,
+  "description": "دوال الخادم لدليل الأردن: تهيئة المالك وإدارة الأدوار وتنظيف الوسائط",
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "scripts": { "test": "node --test test/roles.test.js" },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0"
+  }
+}

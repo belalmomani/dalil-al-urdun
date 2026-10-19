@@ -15,6 +15,10 @@ fun config(name: String): String =
 
 // ---- Start.io: ميتا-داتا App ID تُحقن في المانيفست فقط عند توفر المعرّف ----
 // بدون معرّف: لا تُضاف الميتا-داتا ولا يُهيَّأ SDK وتبقى الإعلانات معطلة بالكامل.
+val safeValue = Regex("^[^\\s\"\\\\]*$")
+val supabaseUrl = config("SUPABASE_URL").trim()
+val supabaseAnon = config("SUPABASE_ANON_KEY").trim()
+require(safeValue.matches(supabaseUrl) && safeValue.matches(supabaseAnon)) { "SUPABASE_URL/SUPABASE_ANON_KEY تحتوي محارف غير صالحة" }
 val startioId = config("STARTIO_APP_ID").trim()
 val baseManifest = file("src/main/AndroidManifest.xml")
 val manifestForBuild: File = if (startioId.isNotEmpty()) {
@@ -43,6 +47,8 @@ android {
 
         // معرّف Start.io يأتي من البناء فقط. فارغ = الإعلانات معطلة.
         buildConfigField("String", "STARTIO_APP_ID", "\"${config("STARTIO_APP_ID")}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnon\"")
         buildConfigField("String", "ADMIN_PANEL_URL", "\"${config("ADMIN_PANEL_URL")}\"")
         buildConfigField("boolean", "ADS_CONFIGURED", (startioId.isNotEmpty()).toString())
     }
@@ -107,8 +113,6 @@ dependencies {
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
-    implementation(libs.firebase.firestore)
-    implementation(libs.firebase.functions)
     implementation(libs.coroutines.play)
 
     implementation(libs.coil.compose)

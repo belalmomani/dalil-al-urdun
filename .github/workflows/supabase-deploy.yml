@@ -1,0 +1,31 @@
+name: نشر Supabase (قاعدة البيانات + الدالة)
+on:
+  workflow_dispatch:
+    inputs:
+      admin_email:
+        description: بريد المالك
+        default: bilalalmomani90@gmail.com
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: ربط المشروع
+        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+      - name: تطبيق الهجرات
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+      - name: ضبط أسرار الدالة
+        env:
+          GS_JSON: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          PID=$(echo "$GS_JSON" | base64 -d | jq -r '.project_info.project_id')
+          supabase secrets set ADMIN_EMAIL="${{ inputs.admin_email }}" FIREBASE_PROJECT_ID="$PID"
+      - name: نشر الدالة
+        run: supabase functions deploy admin-api --no-verify-jwt

@@ -4,8 +4,8 @@ package jo.guide.app.auth
  * منطق نقي (بدون Android) لتحديد حالة صلاحية الحساب من واجهة التطبيق.
  *
  * مهم: هذا للتجربة فقط (إظهار/إخفاء الشاشات). الحماية الحقيقية تُفرض في
- * firestore.rules و storage.rules و Cloud Functions اعتمادًا على custom claims
- * التي يضبطها الخادم فقط. لا يوجد هنا أي اعتماد على نص البريد الإلكتروني.
+ * دالة Supabase admin-api التي تتحقق من رمز Firebase وتحسب الدور في الخادم.
+ * هنا نستقبل نتيجة whoami فقط (claims مبنية منها). لا يوجد أي اعتماد على نص البريد الإلكتروني.
  */
 enum class AccessStatus {
     FIREBASE_NOT_CONFIGURED, SIGNED_OUT, EMAIL_NOT_VERIFIED, USER, EDITOR, ADMIN

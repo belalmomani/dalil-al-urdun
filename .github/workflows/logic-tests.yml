@@ -1,0 +1,21 @@
+name: اختبارات المنطق (Supabase + لوحة الإدارة)
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: منطق لوحة الإدارة
+        run: node --test admin-web/js/logic.test.js
+      - name: منطق دالة admin-api
+        working-directory: supabase
+        run: node --test tests/logic.test.js
+      - name: اختبارات تكاملية لدالة admin-api
+        working-directory: supabase
+        run: node --experimental-strip-types --import ./tests/register.mjs --test tests/api.test.js

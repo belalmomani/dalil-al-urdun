@@ -3,7 +3,6 @@ package jo.guide.app.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.firestore.DocumentSnapshot
 import jo.guide.app.auth.AuthManager
 import jo.guide.app.data.*
 import kotlinx.coroutines.flow.*
@@ -26,9 +25,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val network = NetworkMonitor(app)
 
     private val repo: PlaceRepository =
-        if (FirebaseStatus.isConfigured(app)) FirestorePlaceRepository() else SeedPlaceRepository()
+        if (SupabaseApi.configured) SupabasePlaceRepository(app) else SeedPlaceRepository()
     private val favStore = FavoritesStore(app)
-    private var cursor: DocumentSnapshot? = null
+    private var cursor: Int? = null
 
     private val _catalog = MutableStateFlow(CatalogState(isSample = repo.isSample))
     val catalog = _catalog.asStateFlow()

@@ -1,0 +1,39 @@
+name: نشر لوحة الإدارة (GitHub Pages)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: توليد config.js من الأسرار (قيم عامة وليست سرية)
+        env:
+          GS_JSON: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -e
+          [ -n "$GS_JSON" ] && [ -n "$SUPABASE_URL" ] && [ -n "$SUPABASE_ANON_KEY" ] || { echo "ناقص: GOOGLE_SERVICES_JSON_BASE64 / SUPABASE_URL / SUPABASE_ANON_KEY"; exit 1; }
+          echo "$GS_JSON" | base64 -d > /tmp/gs.json
+          PID=$(jq -r '.project_info.project_id' /tmp/gs.json)
+          KEY=$(jq -r '.client[0].api_key[0].current_key' /tmp/gs.json)
+          jq -n --arg pid "$PID" --arg key "$KEY" --arg url "$SUPABASE_URL" --arg anon "$SUPABASE_ANON_KEY" \
+            '{firebase:{apiKey:$key,authDomain:($pid+".firebaseapp.com"),projectId:$pid,appId:""},supabaseUrl:$url,supabaseAnonKey:$anon}' > /tmp/cfg.json
+          { echo "export const config = $(cat /tmp/cfg.json);"; } > admin-web/config.js
+          rm -f /tmp/gs.json /tmp/cfg.json
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: admin-web
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,95 +1,70 @@
 # دليل الأردن — تطبيق Android
 
 تطبيق Android أصلي (Kotlin + Jetpack Compose) بواجهة عربية RTL: دليل للمطاعم والمواقع السياحية والخدمات والمحافظات والمدن، مع بحث متعدد الفلاتر، ومفضلة، وحساب اختياري، ولوحة إدارة محمية.
-الهوية: كحلي وأبيض وأحمر أردني، وشعار مستوحى من العلم، وبطاقات تصنيف بيضاء بأيقونات حمراء.
+الهوية: كحلي وأبيض وأحمر أردني، وشعار مستوحى من العلم.
 
-> **حالة المشروع بصدق:** الكود والقواعد والدوال والاختبارات المنطقية جاهزة. لم يُبنَ APK بعد (لا يتوفر Android SDK في بيئة التطوير التي كُتب فيها)؛ أول بناء حقيقي سيكون في GitHub Actions. لم يُربط Firebase ولم تُفعَّل الإعلانات؛ كلاهما ينتظر بياناتك.
+> **حالة المشروع بصدق:** اختُبر منطق الخادم (دالة admin-api) ومخطط قاعدة البيانات وسياسات RLS ومنطق لوحة الإدارة محليًا. **لم يُجمَّع كود Kotlin بعد** (لا Android SDK في بيئة الكتابة)؛ أول تجميع حقيقي في GitHub Actions وقد يظهر فيه أخطاء تُصلح بسرعة عند إرسال السجل. لم تُجرَّب الدالة على Supabase حقيقي ولا التحقق من رمز Firebase الحقيقي بعد.
 
 ## البنية
 
 | المسار | المحتوى |
 |---|---|
-| `app/` | تطبيق Android (Compose، Firebase Auth/Firestore/Functions، Coil، Media3، Start.io) |
-| `admin-web/` | لوحة إدارة ويب (تعمل من الهاتف) تُنشر على Firebase Hosting |
-| `functions/` | Cloud Functions: تهيئة المالك، تعيين الأدوار، تنظيف الوسائط اليتيمة |
-| `firestore.rules`, `storage.rules`, `firestore.indexes.json` | قواعد الأمان والفهارس |
-| `tests/` | اختبارات القواعد على محاكي Firebase |
-| `.github/workflows/` | بناء APK واختبارات تلقائية |
+| `app/` | تطبيق Android (Compose، Firebase Auth للدخول فقط، Supabase REST، Coil، Media3، Start.io) |
+| `supabase/migrations/` | مخطط قاعدة البيانات + RLS (القراءة العامة للمنشور فقط) + حاوية الوسائط `media` |
+| `supabase/functions/admin-api/` | دالة Edge: تتحقق من رمز Firebase وتحدد الدور **في الخادم** وتنفّذ كل عمليات الكتابة |
+| `admin-web/` | لوحة إدارة ويب تعمل من الهاتف، تُنشر على GitHub Pages |
+| `legacy-firebase/` | أرشيف النسخة القديمة (Firestore/Storage) — غير مستخدم |
+| `.github/workflows/` | بناء APK، اختبارات المنطق، نشر Supabase، نشر اللوحة |
 
-## ما يعمل وما ينتظر
+## كيف يعمل
 
-| البند | الحالة |
+- **الدخول**: Firebase Authentication (بريد/كلمة مرور). التصفح والبحث بلا تسجيل.
+- **البيانات والوسائط**: Supabase. القراءة العامة عبر REST بمفتاح `anon` (يرى المنشور فقط بحكم RLS). لا كتابة مباشرة من العملاء إطلاقًا.
+- **الصلاحيات**: المالك = البريد المطابق لسر `ADMIN_EMAIL` في الخادم **وبريده مؤكَّد**. المديرون والمحررون يضيفهم المالك فقط في جدول `staff`. المحرر يعمل على المسودات/قيد المراجعة ولا يحذف. لا شيء يعتمد على نص البريد في الواجهة.
+- **رفع الوسائط**: روابط رفع موقّعة قصيرة العمر تصدرها الدالة بعد فحص الصلاحية والنوع والحجم (صورة ≤10MB، فيديو ≤60MB).
+
+## الإعداد خطوة بخطوة (كلها من الهاتف)
+
+### 1) Supabase
+1. أنشئ مشروعًا على supabase.com.
+2. من Project Settings → API انسخ: `Project URL` و`anon public key`. (لا تنسخ `service_role` إلى أي مكان خارج Supabase.)
+3. من Account → Access Tokens أنشئ Token. وخذ `Project ref` (جزء الرابط قبل `.supabase.co`) وكلمة مرور قاعدة البيانات.
+
+### 2) أسرار GitHub (Settings → Secrets and variables → Actions)
+| السر | المصدر |
 |---|---|
-| تصفح وبحث وفلاتر متعددة (أسعار/أعمار/ميزات) بلا تسجيل | مكتوب، بيانات تجريبية موسومة كتجريبية |
-| Firebase Auth/Firestore/Storage | مكتوب؛ **ينتظر مشروع Firebase الخاص بك** |
-| صلاحيات المدير | عبر custom claims من Cloud Functions فقط؛ **تنتظر نشر الدوال وتهيئتك** |
-| إعلان Start.io (بانر) | SDK الأصلي مدمج؛ **معطّل حتى تضيف `STARTIO_APP_ID`** |
-| اختبارات منطق الأدوار (16) ومنطق لوحة الإدارة (10) | نجحت عند التشغيل المحلي |
-| اختبارات قواعد Firestore/Storage | مكتوبة؛ تُشغَّل في GitHub Actions (تحتاج محاكي Firebase) |
-| اختبارات Kotlin وبناء APK | تُشغَّل في GitHub Actions؛ لم تُنفَّذ بعد |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | الخطوة 1 |
+| `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD` | الخطوة 1 (للنشر فقط) |
+| `GOOGLE_SERVICES_JSON_BASE64` | ملف `google-services.json` من Firebase مشفّرًا base64 |
+| `STARTIO_APP_ID` | اختياري؛ بدونه الإعلانات معطلة |
+| `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD` | اختياري للتوقيع (alias: `dalil`) |
 
-## 1) الرفع إلى GitHub من الهاتف
+### 3) Firebase (للدخول فقط)
+فعّل Authentication → Sign-in method → Email/Password. أضف نطاق GitHub Pages (`<اسم-حسابك>.github.io`) إلى Authentication → Settings → Authorized domains.
 
-1. من تطبيق GitHub أو المتصفح: أنشئ مستودعًا جديدًا (خاصًا يفضَّل) باسم `dalil-al-urdun`.
-2. على الهاتف افتح github.com من المتصفح (وضع سطح المكتب) > المستودع > **Add file > Upload files** وارفع محتويات المجلد (احرص على رفع المجلد المخفي `.github`؛ إن تعذّر فأنشئ الملفين يدويًا عبر **Add file > Create new file** بالمسار `.github/workflows/android.yml` ثم `firebase-tests.yml`).
-3. لا ترفع أبدًا: `google-services.json`، مفاتيح `.jks`، ملفات Service Account، `.env` (كلها مستبعدة في `.gitignore`).
+### 4) نشر الخادم
+Actions → «نشر Supabase» → Run workflow. ينشئ الجداول والحاوية، ويضبط `ADMIN_EMAIL` (افتراضيًا `bilalalmomani90@gmail.com`) و`FIREBASE_PROJECT_ID`، وينشر الدالة بـ `--no-verify-jwt`.
+بديل يدوي: الصق ملف `supabase/migrations/*.sql` في SQL Editor.
 
-## 2) بناء APK
+### 5) لوحة الإدارة
+Settings → Pages → Source: GitHub Actions، ثم Actions → «نشر لوحة الإدارة» → Run. افتح الرابط، سجّل الدخول بحساب المالك (بريده **مؤكَّد**) فتظهر لك الأقسام كاملة. ضع رابط اللوحة في متغير البناء `ADMIN_PANEL_URL` إن أردت زرًّا في التطبيق.
 
-بعد الرفع: تبويب **Actions > Android > Run workflow**. عند النجاح افتح التشغيل ونزّل الملف المرفق `dalil-al-urdun-debug-apk` (APK تجريبي). إن فشل البناء فأرسل لي نص الخطأ من سجل الخطوة الفاشلة.
-- نسخة Start.io مثبّتة على `5.4.0` في `gradle/libs.versions.toml`؛
-- نسخة الإصدار الموقّعة تحتاج مفتاح توقيع تنشئه أنت وتضعه كأسرار (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`)؛ لم يُجهَّز مفتاح نيابة عنك.
+### 6) بناء APK
+Actions → «بناء APK» → Run. حمّل الـ artifact. بدون `SUPABASE_URL`/`SUPABASE_ANON_KEY` يعمل التطبيق ببيانات تجريبية موسومة.
 
-## 3) ربط Firebase
+### 7) إدخال المحتوى
+من اللوحة: أضف المناطق ثم الأماكن (مسودة ← نشر) مع المصدر وتاريخ التحقق، وارفع الصور. لا أرقام هواتف ولا تقييمات تُخترع؛ الحقول الفارغة تبقى فارغة. ارفع فقط صورًا تملكها أو مرخّصة.
 
-1. console.firebase.google.com > **Add project**.
-2. **Authentication > Sign-in method**: فعّل Email/Password.
-3. **Firestore Database**: أنشئ قاعدة (وضع الإنتاج).
-4. **Storage**: فعّله. تحقق من خطتك الحالية ومتطلباتها في صفحة Firebase للأسعار قبل الاعتماد عليه (قد يتطلب خطة بفوترة)؛ لم أتحقق من ذلك لحسابك.
-5. **Project settings > Your apps**: أضف تطبيق Android بالمعرّف `jo.guide.app` (النسخة التجريبية تستخدم المعرّف نفسه) ونزّل `google-services.json`.
-6. حوّل الملف إلى base64 وضعه سرًّا في GitHub باسم `GOOGLE_SERVICES_JSON_BASE64` (Settings > Secrets and variables > Actions). الـ workflow ينشئ الملف أثناء البناء ولا يُحفظ في المستودع.
-7. أضف تطبيق Web وانسخ إعداداته إلى `admin-web/firebase-config.js` (ليست أسرارًا لكنها خاصة بمشروعك).
-8. انسخ `.firebaserc.example` إلى `.firebaserc` وضع معرّف مشروعك.
-9. انشر القواعد والفهارس: `firebase deploy --only firestore,storage`.
-
-بدون `google-services.json` يُبنى التطبيق ويعمل في «وضع البيانات التجريبية».
-
-## 4) المدير الرئيسي (bilalalmomani90@gmail.com)
-
-لا تُمنح الصلاحية بمجرد كتابة البريد. الآلية:
-1. سجّل في التطبيق أو لوحة الإدارة بهذا البريد وأكّد بريدك من رسالة التحقق (شرط `email_verified`).
-2. ضع البريد في `functions/.env` (انسخ من `.env.example`) — يبقى على الخادم فقط.
-3. انشر الدوال: `cd functions && npm install && firebase deploy --only functions` (تتطلب خطة Blaze في Firebase).
-4. من شاشة حسابك أو لوحة الويب اضغط «تهيئة المالك» (تستدعي `bootstrapOwner`): تتحقق الدالة من أن المستدعي مسجّل وبريده مؤكد ومطابق تمامًا، ثم تضبط claim `admin`.
-5. سجّل الخروج ثم الدخول لتحديث الرمز؛ تظهر لوحة الإدارة.
-
-إلى أن تُنفَّذ هذه الخطوات فعليًا تعرض الواجهة تعليمات التهيئة بدل لوحة الإدارة. تعيين المحررين (`setRole`) للمالك فقط، ولا يُمنح أي دور افتراضيًا.
-
-## 5) Start.io
-
-1. أنشئ تطبيقًا في لوحة Start.io وانسخ **App ID**.
-2. ضعه سرًّا في GitHub باسم `STARTIO_APP_ID` (أو محليًا: `./gradlew assembleDebug -PSTARTIO_APP_ID=...`).
-3. بدونه: لا يُهيَّأ SDK ولا تظهر الإعلانات.
-
-التخطيط: المحتوى (weight 1) ثم شريط التنقل ثم صف الإعلان؛ ليس عنصرًا عائمًا. الصف يبقى 1dp قبل وصول إعلان، ويُخفى مع لوحة المفاتيح وشاشتي الحساب والإدارة، وفشل الإعلان لا يعطّل التطبيق. الإعلان الأصلي يعمل في Android فقط وليس في لوحة الويب.
-
-## 6) لوحة الإدارة (ويب)
-
-`firebase deploy --only hosting` ينشر `admin-web/` على رابط مشروعك. تعتمد على Firestore/Storage والدوال أعلاه، والحماية الفعلية في القواعد وليس في إخفاء الأزرار.
-
-## 7) الاختبارات محليًا
-
-```bash
-cd functions && npm test                       # منطق الأدوار
-cd admin-web/js && node --test logic.test.js   # منطق اللوحة
-cd tests && npm install && npm test            # قواعد Firestore/Storage (محاكي Firebase، يحتاج Java)
-./gradlew testDebugUnitTest                    # اختبارات Kotlin (يحتاج Android SDK)
+## الاختبارات محليًا
+```
+node --test admin-web/js/logic.test.js
+cd supabase && node --test tests/logic.test.js
+cd supabase && node --experimental-strip-types --import ./tests/register.mjs --test tests/api.test.js
+./gradlew testDebugUnitTest      # يحتاج Android SDK
 ```
 
-## الفوترة والحدود
-
-راجع حدود خطة Firebase (التخزين والنقل وقراءات Firestore) وفعّل تنبيهات الميزانية في Google Cloud. صور وفيديوهات كبيرة تستهلك النقل بسرعة؛ حدود الحجم والصيغ مفروضة في `storage.rules`. App Check غير مفعّل بعد ويحتاج مزوّدًا تضبطه أنت (Play Integrity).
-
-## البيانات
-
-البيانات الأولية في `SeedData.kt` **تجريبية وليست بيانات حقيقية**؛ لا توجد أرقام هواتف أو تقييمات مخترعة. أدخل الأماكن الحقيقية عبر لوحة الإدارة مع المصدر وتاريخ التحقق.
+## حدود معروفة
+- لم يُجرَّب التحقق من توقيع رمز Firebase الحقيقي ولا الدالة على Supabase حقيقي.
+- مشروع Firebase المشترك مع تطبيقات أخرى يشارك مستخدميه؛ يُفضّل مشروع مخصص.
+- لا يوجد App Check بعد. راقب حدود خطة Supabase (التخزين/النقل).
+- البيانات الأولية في `SeedData.kt` تجريبية وليست حقيقية.

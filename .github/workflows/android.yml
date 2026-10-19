@@ -61,6 +61,8 @@ jobs:
         env:
           # فارغ = الإعلانات معطلة. ضع STARTIO_APP_ID في Secrets بعد حصولك على المعرّف.
           STARTIO_APP_ID: ${{ secrets.STARTIO_APP_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: ./gradlew --no-daemon assembleDebug
 
       - uses: actions/upload-artifact@v4

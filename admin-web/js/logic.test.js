@@ -4,14 +4,9 @@ import * as L from './logic.js';
 
 const base = { name: 'مطعم تجريبي', category: 'restaurants', status: 'draft' };
 
-test('staffRole: لا دور بدون تأكيد البريد أو claims', () => {
-  assert.equal(L.staffRole({ admin: true }, false), null);
-  assert.equal(L.staffRole({}, true), null);
-  assert.equal(L.staffRole(null, true), null);
-  assert.equal(L.staffRole({ admin: 'true' }, true), null); // يجب أن تكون true منطقية
-  assert.equal(L.staffRole({ admin: true, owner: true }, true), 'owner');
-  assert.equal(L.staffRole({ admin: true }, true), 'admin');
-  assert.equal(L.staffRole({ editor: true }, true), 'editor');
+test('normRole يقبل الأدوار المعروفة فقط', () => {
+  assert.equal(L.normRole('owner'), 'owner'); assert.equal(L.normRole('editor'), 'editor');
+  assert.equal(L.normRole('root'), null); assert.equal(L.normRole(null), null);
 });
 test('المحرر لا ينشر ولا يحذف', () => {
   assert.deepEqual(L.allowedStatuses('editor'), ['draft', 'review']);
@@ -41,7 +36,7 @@ test('القوائم تُنقّى من قيم غير معروفة', () => {
   const { doc } = L.validatePlaceForm({ ...base, features: ['wifi', 'hacker'], ageGroups: ['kids', 'x'], activities: 'a\n\n b ' }, 'admin');
   assert.deepEqual(doc.features, ['wifi']); assert.deepEqual(doc.ageGroups, ['kids']); assert.deepEqual(doc.activities, ['a', 'b']);
 });
-test('حدود الرفع تطابق storage.rules', () => {
+test('حدود الرفع تطابق الخادم', () => {
   assert.equal(L.validateUpload({ type: 'image/png', size: 1000 }, 'image'), null);
   assert.ok(L.validateUpload({ type: 'image/gif', size: 1000 }, 'image'));
   assert.ok(L.validateUpload({ type: 'image/png', size: 11 * 1048576 }, 'image'));
@@ -49,16 +44,6 @@ test('حدود الرفع تطابق storage.rules', () => {
   assert.ok(L.validateUpload({ type: 'video/mp4', size: 61 * 1048576 }, 'video'));
   assert.ok(L.validateUpload({ type: 'application/pdf', size: 10 }, 'image'));
   assert.ok(L.validateUpload({ type: 'image/png', size: 0 }, 'image'));
-});
-test('اسم الملف الآمن يطابق regex القواعد', () => {
-  const n = L.safeFileName('../../صورة غريبة!!.JPG', 1700000000000, 0.5);
-  assert.match(n, /^[A-Za-z0-9._-]{1,120}$/);
-  assert.ok(n.endsWith('.jpg'));
-  assert.match(L.safeFileName('x'), /^[A-Za-z0-9._-]{1,120}$/);
-});
-test('مسار التخزين', () => {
-  assert.equal(L.storagePathFor('p1', 'image', 'a.jpg'), 'places/p1/images/a.jpg');
-  assert.equal(L.storagePathFor('p1', 'video', 'a.mp4'), 'places/p1/videos/a.mp4');
 });
 test('إعادة الترتيب', () => {
   const r = L.reorder([{ id: 'a' }, { id: 'b' }, { id: 'c' }], 0, 2);

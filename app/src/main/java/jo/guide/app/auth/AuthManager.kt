@@ -5,8 +5,8 @@ import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.functions.FirebaseFunctions
 import jo.guide.app.data.FirebaseStatus
+import jo.guide.app.data.SupabaseApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,7 +31,7 @@ data class AuthState(
 
 /**
  * غلاف Firebase Authentication. الحساب اختياري: التطبيق كله يعمل للزوار.
- * الصلاحيات تُقرأ من custom claims في ID token (يضبطها الخادم فقط) ولا يمكن للمستخدم تعديلها.
+ * الصلاحيات تحسبها دالة الخادم من رمز الدخول الموثّق ولا يمكن للمستخدم تعديلها.
  */
 class AuthManager(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -50,15 +50,31 @@ class AuthManager(context: Context) {
             _state.value = AuthState(configured = true)
             return
         }
-        val claims = try {
-            user.getIdToken(force).await().claims
-        } catch (_: Exception) {
-            emptyMap()
-        }
+        if (force) runCatching { user.getIdToken(true).await() } // يحدّث email_verified داخل الرمز
+        val claims = roleClaims(user)
         _state.value = _state.value.copy(
             configured = true, uid = user.uid, email = user.email,
             emailVerified = user.isEmailVerified, claims = claims,
         )
+    }
+
+    /**
+     * الدور تحسبه دالة الخادم admin-api (whoami) بعد التحقق من رمز Firebase وتأكيد البريد:
+     * المالك = بريد مطابق لـ ADMIN_EMAIL في الخادم؛ غيره من جدول staff الذي يعدّله المالك فقط.
+     * التطبيق هنا يعرض النتيجة فقط، ولا يمنح شيئًا. فشل الاتصال = بلا صلاحيات.
+     */
+    private suspend fun roleClaims(user: FirebaseUser): Map<String, Any?> {
+        if (!SupabaseApi.configured || !user.isEmailVerified) return emptyMap()
+        return try {
+            val o = SupabaseApi.api("whoami")
+            val role = if (o.isNull("role")) null else o.optString("role")
+            mapOf(
+                AdminAccess.CLAIM_ADMIN to (role == "owner" || role == "admin"),
+                AdminAccess.CLAIM_EDITOR to (role == "editor"),
+            )
+        } catch (_: Exception) {
+            emptyMap()
+        }
     }
 
     fun clearMessage() { _state.value = _state.value.copy(message = null) }
@@ -104,16 +120,11 @@ class AuthManager(context: Context) {
         if (configured) auth.signOut()
     }
 
-    /**
-     * تهيئة المالك الأول: تستدعي Cloud Function (bootstrapOwner) التي تتحقق في الخادم من
-     * (١) تطابق البريد تمامًا مع ADMIN_EMAIL المضبوط في الخادم، (٢) email_verified في الـ token،
-     * ثم تضبط claim. لا شيء يُمنح من التطبيق نفسه.
-     */
-    fun bootstrapOwner() = launchOp("تمت تهيئة صلاحية المالك بنجاح.") {
-        val res = FirebaseFunctions.getInstance().getHttpsCallable("bootstrapOwner").call().await()
-        val ok = (res.data as? Map<*, *>)?.get("ok") == true
+    /** إعادة فحص الصلاحية من الخادم (بعد تأكيد البريد أو بعد أن يمنحك المالك دورًا). */
+    fun recheckAccess() = launchOp("تم تحديث حالة الصلاحية.") {
+        val u = auth.currentUser ?: return@launchOp
+        u.reload().await()
         refresh(auth.currentUser, force = true)
-        if (!ok) error("تعذّرت التهيئة")
     }
 
     private fun arabicError(e: Exception): String = when (e) {

@@ -97,48 +97,9 @@ data class Place(
     /** true للبيانات التجريبية المضمّنة في التطبيق. */
     val isSample: Boolean = false,
 ) {
-    companion object {
-        fun fromMap(id: String, m: Map<String, Any?>): Place? {
-            val name = m["name"] as? String ?: return null
-            return Place(
-                id = id,
-                name = name,
-                category = m["category"] as? String ?: Category.SERVICES.id,
-                regionId = m["regionId"] as? String,
-                regionName = m["regionName"] as? String,
-                description = m["description"] as? String ?: "",
-                phone = (m["phone"] as? String)?.takeIf { it.isNotBlank() },
-                address = (m["address"] as? String)?.takeIf { it.isNotBlank() },
-                lat = (m["lat"] as? Number)?.toDouble(),
-                lng = (m["lng"] as? Number)?.toDouble(),
-                website = (m["website"] as? String)?.takeIf { it.isNotBlank() },
-                priceLevel = (m["priceLevel"] as? Number)?.toInt(),
-                priceNote = m["priceNote"] as? String,
-                openingHours = m["openingHours"] as? String,
-                kidsFriendly = m["kidsFriendly"] as? Boolean,
-                ageGroups = strList(m["ageGroups"]),
-                features = strList(m["features"]),
-                activities = strList(m["activities"]),
-                alerts = strList(m["alerts"]),
-                sourceName = m["sourceName"] as? String,
-                sourceUrl = m["sourceUrl"] as? String,
-                verifiedAt = (m["verifiedAt"] as? Number)?.toLong() ?: tsMillis(m["verifiedAt"]),
-                status = m["status"] as? String ?: "draft",
-                featured = m["featured"] as? Boolean ?: false,
-                coverUrl = (m["coverUrl"] as? String)?.takeIf { it.isNotBlank() },
-                coverAlt = m["coverAlt"] as? String,
-            )
-        }
-
-        private fun strList(v: Any?): List<String> =
-            (v as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-
-        private fun tsMillis(v: Any?): Long? =
-            (v as? com.google.firebase.Timestamp)?.toDate()?.time
-    }
 }
 
-/** وسيط (صورة/فيديو) مرتبط بمكان. الملفات نفسها في Firebase Storage. */
+/** وسيط (صورة/فيديو) مرتبط بمكان. الملفات نفسها في Supabase Storage. */
 data class PlaceMedia(
     val id: String,
     val type: String, // "image" | "video"
@@ -155,23 +116,4 @@ data class PlaceMedia(
 ) {
     val isVideo get() = type == "video"
 
-    companion object {
-        fun fromMap(id: String, m: Map<String, Any?>): PlaceMedia? {
-            val url = m["url"] as? String ?: return null
-            return PlaceMedia(
-                id = id,
-                type = m["type"] as? String ?: "image",
-                url = url,
-                thumbUrl = m["thumbUrl"] as? String,
-                title = m["title"] as? String,
-                description = m["description"] as? String,
-                alt = m["alt"] as? String,
-                order = (m["order"] as? Number)?.toInt() ?: 0,
-                isCover = m["isCover"] as? Boolean ?: false,
-                durationSec = (m["durationSec"] as? Number)?.toInt(),
-                source = m["source"] as? String,
-                license = m["license"] as? String,
-            )
-        }
-    }
 }

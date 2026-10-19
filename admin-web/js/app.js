@@ -1,9 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail, sendEmailVerification } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, query, where, orderBy, limit, startAfter, serverTimestamp, getCountFromServer, collectionGroup } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
-import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js';
-import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-functions.js';
-import { firebaseConfig, FUNCTIONS_REGION } from '../firebase-config.js';
+import { config } from '../config.js';
 import * as L from './logic.js';
 
 const $app = document.getElementById('app');
@@ -25,361 +22,232 @@ function h(tag, attrs = {}, ...kids) {
 const show = (...nodes) => { $app.replaceChildren(...nodes.flat().filter(Boolean)); };
 const msg = (text, kind = 'err') => h('div', { class: `msg ${kind}`, role: kind === 'err' ? 'alert' : 'status' }, text);
 
-const configured = !!firebaseConfig.apiKey && !!firebaseConfig.projectId;
-if (!configured) {
-  show(h('div', { class: 'card' }, h('h2', {}, 'الإعداد مطلوب'), msg('املأ ملف admin-web/firebase-config.js ببيانات تطبيق الويب من Firebase Console ثم أعد التحميل. (راجع README)', 'warn')));
-  throw new Error('firebase-config.js غير مكتمل');
+if (!config.firebase.apiKey || !config.firebase.projectId || !config.supabaseUrl.startsWith('https://')) {
+  show(h('div', { class: 'card' }, h('h2', {}, 'الإعداد مطلوب'), msg('لم تُضبط إعدادات Firebase/Supabase لهذه اللوحة. شغّل workflow «نشر لوحة الإدارة» بعد إضافة الأسرار (راجع README).', 'warn')));
+  throw new Error('config.js غير مكتمل');
 }
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
-const fns = getFunctions(app, FUNCTIONS_REGION);
+const auth = getAuth(initializeApp(config.firebase));
+let S = { user: null, role: null, tab: 'stats', flash: null, regions: [] };
+let sbClient = null;
 
-let S = { user: null, claims: {}, role: null, tab: 'stats', flash: null };
+async function api(action, body = {}) {
+  const token = await auth.currentUser.getIdToken();
+  let res;
+  try {
+    res = await fetch(`${config.supabaseUrl.replace(/\/$/, '')}/functions/v1/admin-api`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-firebase-token': token, apikey: config.supabaseAnonKey },
+      body: JSON.stringify({ ...body, action }),
+    });
+  } catch { throw new Error('تعذّر الاتصال بالخادم.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `رفض الخادم الطلب (${res.status}).`);
+  return data;
+}
 
-async function refreshClaims(force = true) {
-  if (!auth.currentUser) { S.claims = {}; S.role = null; return; }
-  const r = await auth.currentUser.getIdTokenResult(force);
-  S.claims = r.claims;
-  S.role = L.staffRole(r.claims, auth.currentUser.emailVerified);
+async function loadRole() {
+  S.role = null;
+  if (!auth.currentUser || !auth.currentUser.emailVerified) return;
+  try { S.role = L.normRole((await api('whoami')).role); } catch { S.role = null; }
 }
 
 onAuthStateChanged(auth, async (u) => {
   S.user = u;
-  await refreshClaims(true).catch(() => {});
+  await loadRole();
   $who.textContent = u ? `${u.email} — ${S.role ?? 'بدون صلاحية'}` : '';
   render();
 });
 
-const audit = (action, targetPath, extra) =>
-  addDoc(collection(db, 'audit'), { ...L.auditEntry(action, targetPath, auth.currentUser.uid, extra), at: serverTimestamp() }).catch(() => {});
+const run = async (fn, okText) => {
+  try { await fn(); if (okText) S.flash = { text: okText, kind: 'ok' }; }
+  catch (e) { S.flash = { text: e.message || 'حدث خطأ.', kind: 'err' }; }
+  render();
+};
+const flash = () => { const f = S.flash; S.flash = null; return f ? msg(f.text, f.kind) : null; };
+const field = (label, input) => h('label', { class: 'field' }, h('span', {}, label), input);
+const sel = (name, map, cur, blank) => h('select', { name }, blank ? h('option', { value: '' }, blank) : null, Object.entries(map).map(([k, v]) => h('option', { value: k, selected: k === cur }, v)));
+const checks = (name, map, cur = []) => h('div', { class: 'checks' }, Object.entries(map).map(([k, v]) => h('label', {}, h('input', { type: 'checkbox', name, value: k, checked: cur.includes(k) }), ' ', v)));
 
-// ---------------------------------------------------------------- شاشات الدخول
+// ---------------------------------------------------------------- الدخول
 function render() {
-  const st = L.authStatusMessage({ signedIn: !!S.user, emailVerified: !!S.user?.emailVerified, role: S.role });
-  if (st.kind !== 'ok') return show(loginView(st));
-  const tabs = [['stats', 'الإحصائيات'], ['places', 'الأماكن'], ['regions', 'المناطق'], ['inbox', 'البلاغات والاقتراحات'], ['settings', 'الإعدادات']];
-  if (S.role === 'owner') tabs.push(['roles', 'الصلاحيات']);
-  if (S.role === 'owner' || S.role === 'admin') tabs.push(['audit', 'سجل العمليات']);
-  const body = h('div');
-  show(
-    h('nav', { class: 'tabs' }, tabs.map(([k, t]) => h('button', { class: S.tab === k ? 'active' : '', onclick: () => { S.tab = k; render(); } }, t)),
-      h('button', { onclick: () => signOut(auth) }, 'تسجيل الخروج')),
-    S.flash ? msg(S.flash.text, S.flash.kind) : null,
-    body,
-  );
-  S.flash = null;
-  ({ stats: statsView, places: placesView, regions: regionsView, inbox: inboxView, settings: settingsView, roles: rolesView, audit: auditView })[S.tab](body);
-}
-const flash = (text, kind = 'ok') => { S.flash = { text, kind }; render(); };
-
-function loginView(st) {
-  const email = h('input', { type: 'email', autocomplete: 'username', placeholder: 'البريد الإلكتروني' });
-  const pass = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'كلمة المرور' });
-  const out = h('div');
-  const say = (t, k = 'err') => out.replaceChildren(msg(t, k));
-  const box = h('div', { class: 'card' }, h('h2', {}, 'الدخول'));
-  if (st.kind !== 'signin') box.append(msg(st.text, 'warn'));
-  if (!S.user) {
-    box.append(h('label', {}, 'البريد'), email, h('label', {}, 'كلمة المرور'), pass,
-      h('div', { class: 'row', style: 'margin-top:12px' },
-        h('button', { class: 'primary', onclick: async () => { try { await signInWithEmailAndPassword(auth, email.value.trim(), pass.value); } catch { say('البريد أو كلمة المرور غير صحيحة.'); } } }, 'دخول'),
-        h('button', { onclick: async () => { try { await sendPasswordResetEmail(auth, email.value.trim()); say('إن كان البريد مسجلًا فقد أُرسل رابط الاستعادة.', 'ok'); } catch { say('تعذّر الإرسال.'); } } }, 'نسيت كلمة المرور')));
-  } else {
-    box.append(h('div', { class: 'row' },
-      h('button', { onclick: async () => { await auth.currentUser.reload(); await refreshClaims(true); render(); } }, 'تحديث'),
-      !S.user.emailVerified ? h('button', { onclick: async () => { try { await sendEmailVerification(auth.currentUser); say('أُرسلت رسالة التأكيد.', 'ok'); } catch { say('تعذّر الإرسال.'); } } }, 'إعادة إرسال التأكيد') : null,
-      S.user.emailVerified && !S.role ? h('button', { class: 'primary', onclick: async () => {
-        try { await httpsCallable(fns, 'bootstrapOwner')(); await refreshClaims(true); say('تمت تهيئة صلاحية المالك.', 'ok'); render(); }
-        catch (e) { say(`رفض الخادم: ${e.message}`); }
-      } }, 'تهيئة المالك') : null,
-      h('button', { onclick: () => signOut(auth) }, 'تسجيل الخروج')));
-  }
-  box.append(out);
-  return box;
+  if (!S.user) return renderSignIn();
+  const st = L.authStatusMessage({ signedIn: true, emailVerified: S.user.emailVerified, role: S.role });
+  if (st.kind !== 'ok') return renderBlocked(st);
+  renderShell();
 }
 
-// ---------------------------------------------------------------- الإحصائيات
-async function statsView(body) {
-  body.append(h('p', { class: 'muted' }, 'جارٍ الحساب…'));
-  const c = async (q) => (await getCountFromServer(q)).data().count;
+function renderSignIn() {
+  const email = h('input', { type: 'email', name: 'email', required: true, autocomplete: 'username' });
+  const pass = h('input', { type: 'password', name: 'pass', required: true, autocomplete: 'current-password' });
+  show(h('form', { class: 'card', onsubmit: (e) => { e.preventDefault(); run(() => signInWithEmailAndPassword(auth, email.value.trim(), pass.value)); } },
+    h('h2', {}, 'تسجيل الدخول'), flash(), field('البريد الإلكتروني', email), field('كلمة المرور', pass),
+    h('button', { class: 'btn', type: 'submit' }, 'دخول'),
+    h('button', { class: 'link', type: 'button', onclick: () => run(() => sendPasswordResetEmail(auth, email.value.trim()), 'إن كان البريد مسجلًا فستصله رسالة.') }, 'نسيت كلمة المرور؟')));
+}
+
+function renderBlocked(st) {
+  show(h('div', { class: 'card' }, h('h2', {}, 'لا يمكن المتابعة'), flash(), msg(st.text, 'warn'),
+    st.kind === 'verify' ? h('button', { class: 'btn', onclick: () => run(() => sendEmailVerification(auth.currentUser), 'أُرسلت رسالة التأكيد.') }, 'إرسال رسالة التأكيد') : null,
+    h('button', { class: 'btn', onclick: () => run(async () => { await auth.currentUser.reload(); await auth.currentUser.getIdToken(true); await loadRole(); $who.textContent = `${auth.currentUser.email} — ${S.role ?? 'بدون صلاحية'}`; }) }, 'تحديث'),
+    h('button', { class: 'link', onclick: () => signOut(auth) }, 'تسجيل الخروج')));
+}
+
+// ---------------------------------------------------------------- الهيكل
+const TABS = [['stats', 'نظرة عامة'], ['places', 'الأماكن'], ['regions', 'المناطق'], ['inbox', 'البلاغات'], ['settings', 'الإعدادات'], ['staff', 'الفريق'], ['audit', 'السجل']];
+const isAdmin = () => L.canDelete(S.role);
+const tabsFor = () => TABS.filter(([k]) => isAdmin() || ['stats', 'places'].includes(k)).filter(([k]) => k !== 'staff' || S.role === 'owner');
+
+async function renderShell() {
+  const nav = h('nav', { class: 'tabs' }, tabsFor().map(([k, t]) => h('button', { class: k === S.tab ? 'on' : '', onclick: () => { S.tab = k; S.edit = null; render(); } }, t)),
+    h('button', { class: 'link', onclick: () => signOut(auth) }, 'خروج'));
+  const body = h('div', {}, h('p', { class: 'muted' }, 'جارٍ التحميل…'));
+  show(nav, flash(), body);
   try {
-    const P = collection(db, 'places');
-    const [all, pub, dr, rev, users, media, reps, sug] = await Promise.all([
-      c(P), c(query(P, where('status', '==', 'published'))), c(query(P, where('status', '==', 'draft'))), c(query(P, where('status', '==', 'review'))),
-      S.role === 'editor' ? Promise.resolve('—') : c(collection(db, 'users')), c(collectionGroup(db, 'media')),
-      c(query(collection(db, 'reports'), where('status', '==', 'open'))), c(query(collection(db, 'suggestions'), where('status', '==', 'pending'))),
-    ]);
-    const s = (t, v) => h('div', { class: 'card stat' }, h('b', {}, v), t);
-    body.replaceChildren(h('div', { class: 'grid' }, s('الأماكن', all), s('منشور', pub), s('مسودات', dr), s('قيد المراجعة', rev), s('المستخدمون', users), s('الوسائط', media), s('بلاغات مفتوحة', reps), s('اقتراحات', sug)));
-  } catch (e) { body.replaceChildren(msg(`رفض الخادم أو فشل الاتصال: ${e.code || e.message}`)); }
+    if (!S.regions.length) S.regions = (await api('list_regions')).regions;
+    const view = await VIEWS[S.tab]?.();
+    body.replaceChildren(...[].concat(view || []));
+  } catch (e) { body.replaceChildren(msg(e.message)); }
 }
 
-// ---------------------------------------------------------------- الأماكن
-let placeCursor = null;
-async function placesView(body, reset = true) {
-  if (reset) placeCursor = null;
-  const q = h('input', { placeholder: 'ابحث بالاسم في النتائج المحمّلة…' });
-  const st = h('select', {}, h('option', { value: '' }, 'كل الحالات'), Object.entries(L.STATUSES).map(([k, v]) => h('option', { value: k }, v)));
-  const list = h('div');
-  const more = h('button', {}, 'تحميل المزيد');
-  let items = [];
-  const draw = () => {
-    const t = q.value.trim().toLowerCase();
-    list.replaceChildren(...items.filter((p) => !t || (p.name || '').toLowerCase().includes(t)).map((p) =>
-      h('div', { class: 'card row' }, h('div', { class: 'grow' }, h('b', {}, p.name), ' ', h('span', { class: `badge b-${p.status}` }, L.STATUSES[p.status] || p.status), h('div', { class: 'muted' }, [L.CATEGORIES[p.category], p.regionName].filter(Boolean).join(' · '))),
-        h('button', { onclick: () => placeForm(body, p) }, 'تعديل'))));
-  };
-  const load = async () => {
-    try {
-      const cons = [orderBy('name'), limit(25)];
-      if (st.value) cons.unshift(where('status', '==', st.value));
-      if (placeCursor) cons.push(startAfter(placeCursor));
-      const snap = await getDocs(query(collection(db, 'places'), ...cons));
-      items = items.concat(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      placeCursor = snap.docs.length === 25 ? snap.docs[snap.docs.length - 1] : null;
-      more.hidden = !placeCursor; draw();
-    } catch (e) { list.replaceChildren(msg(`تعذّر التحميل: ${e.code || e.message} (قد تحتاج إنشاء فهرس — راجع README)`)); }
-  };
-  st.addEventListener('change', () => { items = []; placeCursor = null; load(); });
-  q.addEventListener('input', draw); more.addEventListener('click', load);
-  body.replaceChildren(h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => placeForm(body, null) }, '+ إضافة مكان'), h('div', { class: 'grow' }, q), st), list, more);
-  load();
-}
+const VIEWS = {
+  async stats() {
+    const s = await api('stats');
+    const items = [['الأماكن', s.places], ['منشور', s.published], ['مسودات', s.drafts], ['قيد المراجعة', s.review], ['مؤرشف', s.archived], ['الوسائط', s.media], ['المناطق', s.regions], ['بلاغات مفتوحة', s.openReports], ['اقتراحات', s.pendingSuggestions]];
+    return h('div', { class: 'grid' }, items.map(([k, v]) => h('div', { class: 'stat' }, h('b', {}, v), h('span', {}, k))));
+  },
 
-async function placeForm(body, existing) {
-  const isNew = !existing;
-  const id = existing?.id || L.slugId(existing?.name || 'place');
-  const p = existing || { status: 'draft', category: 'restaurants', features: [], ageGroups: [] };
-  const regionsSnap = await getDocs(query(collection(db, 'regions'), orderBy('name'), limit(200))).catch(() => ({ docs: [] }));
-  const regions = regionsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const F = {};
-  const inp = (key, label, attrs = {}) => { F[key] = h('input', { value: p[key] ?? '', ...attrs }); return [h('label', {}, label), F[key]]; };
-  const area = (key, label, val) => { F[key] = h('textarea', {}, val ?? p[key] ?? ''); return [h('label', {}, label), F[key]]; };
-  const sel = (key, label, opts, val) => { F[key] = h('select', {}, opts.map(([k, v]) => h('option', { value: k, selected: String(val ?? p[key] ?? '') === String(k) }, v))); return [h('label', {}, label), F[key]]; };
-  const checks = (key, label, opts) => { F[key] = opts.map(([k, v]) => h('input', { type: 'checkbox', value: k, checked: (p[key] || []).includes(k) })); return [h('label', {}, label), h('div', { class: 'checks' }, opts.map(([k, v], i) => h('label', {}, F[key][i], v)))]; };
-  const out = h('div');
-  const statusOpts = L.allowedStatuses(S.role).map((k) => [k, L.STATUSES[k]]);
-  F.featured = h('input', { type: 'checkbox', checked: !!p.featured, style: 'width:auto;min-height:auto' });
-  const kf = p.kidsFriendly === true ? 'yes' : p.kidsFriendly === false ? 'no' : '';
+  async places() {
+    if (S.edit) return placeEditor(S.edit === 'new' ? null : S.edit);
+    const { places, hasMore } = await api('list_places', { offset: S.offset || 0, limit: 30 });
+    const cat = (c) => L.CATEGORIES[c] || c;
+    return [
+      h('button', { class: 'btn', onclick: () => { S.edit = 'new'; render(); } }, '+ مكان جديد'),
+      places.length ? h('ul', { class: 'list' }, places.map((p) => h('li', {}, h('div', {}, h('b', {}, p.name), h('small', {}, ` ${cat(p.category)} · ${L.STATUSES[p.status] || p.status}`)),
+        h('button', { class: 'btn sm', onclick: () => { S.edit = p; render(); } }, 'تعديل')))) : h('p', { class: 'muted' }, 'لا أماكن بعد.'),
+      h('div', { class: 'row' },
+        S.offset ? h('button', { class: 'btn sm', onclick: () => { S.offset = Math.max(0, S.offset - 30); render(); } }, 'السابق') : null,
+        hasMore ? h('button', { class: 'btn sm', onclick: () => { S.offset = (S.offset || 0) + 30; render(); } }, 'التالي') : null),
+    ];
+  },
 
-  const form = h('div', { class: 'card' }, h('h2', {}, isNew ? 'إضافة مكان' : `تعديل: ${p.name}`),
-    inp('name', 'الاسم *'), sel('category', 'التصنيف *', Object.entries(L.CATEGORIES)),
-    sel('status', 'الحالة *', statusOpts),
-    sel('regionId', 'المنطقة', [['', '— غير محدد —'], ...regions.map((r) => [r.id, `${L.REGION_TYPES[r.type] || ''} ${r.name}`])]),
-    area('description', 'الوصف'),
-    inp('phone', 'الهاتف (اتركه فارغًا إن لم يوثَّق)', { inputmode: 'tel' }), inp('address', 'العنوان'), inp('website', 'الموقع الإلكتروني (https://…)'),
-    inp('lat', 'خط العرض', { inputmode: 'decimal' }), inp('lng', 'خط الطول', { inputmode: 'decimal' }),
-    sel('priceLevel', 'مستوى السعر', [['', '— غير محدد —'], ['1', 'اقتصادي'], ['2', 'متوسط'], ['3', 'مرتفع']], p.priceLevel ?? ''), inp('priceNote', 'ملاحظة عن السعر'),
-    inp('openingHours', 'ساعات العمل'),
-    sel('kidsFriendly', 'ملاءمة الأطفال', [['', '— غير محدد —'], ['yes', 'مناسب'], ['no', 'غير مخصص']], kf),
-    checks('ageGroups', 'الفئات العمرية', Object.entries(L.AGE_GROUPS)), checks('features', 'المرافق', Object.entries(L.FEATURES)),
-    area('activities', 'الأنشطة (سطر لكل نشاط)', (p.activities || []).join('\n')), area('alerts', 'تنبيهات مهمة (سطر لكل تنبيه)', (p.alerts || []).join('\n')),
-    inp('sourceName', 'اسم المصدر'), inp('sourceUrl', 'رابط المصدر'),
-    h('label', {}, F.featured, ' مكان مميز في الصفحة الرئيسية'),
-    h('div', { class: 'muted' }, existing?.verifiedAt ? 'موثّق سابقًا.' : 'غير موثّق بعد.'),
-    h('div', { class: 'row', style: 'margin-top:12px' },
-      h('button', { class: 'primary', onclick: () => save(false) }, 'حفظ'),
-      h('button', { onclick: () => save(true) }, 'حفظ + تسجيل أنني تحققت اليوم'),
-      !isNew && L.canDelete(S.role) ? h('button', { class: 'danger', onclick: del }, 'حذف المكان') : null,
-      h('button', { onclick: () => placesView(body) }, 'رجوع')),
-    out);
+  async regions() {
+    const rows = S.regions;
+    const f = h('form', { class: 'card', onsubmit: (e) => { e.preventDefault(); const d = Object.fromEntries(new FormData(e.target)); run(async () => { await api('upsert_region', { name: d.name, type: d.type, parentId: d.parentId || null, status: 'published' }); S.regions = []; }, 'حُفظت المنطقة.'); } },
+      h('h3', {}, 'إضافة منطقة'), field('الاسم', h('input', { name: 'name', required: true })), field('النوع', sel('type', L.REGION_TYPES, 'governorate')),
+      field('تتبع لـ', h('select', { name: 'parentId' }, h('option', { value: '' }, '— بدون —'), rows.map((r) => h('option', { value: r.id }, r.name)))), h('button', { class: 'btn' }, 'حفظ'));
+    return [f, h('ul', { class: 'list' }, rows.map((r) => h('li', {}, h('span', {}, `${r.name} (${L.REGION_TYPES[r.type] || r.type})`),
+      h('button', { class: 'btn sm danger', onclick: () => confirm(`حذف «${r.name}»؟`) && run(async () => { await api('delete_region', { id: r.id }); S.regions = []; }, 'حُذفت.') }, 'حذف'))))];
+  },
 
-  async function save(markVerified) {
-    const val = (k) => F[k].value;
-    const regionId = val('regionId');
-    const r = regions.find((x) => x.id === regionId);
-    const { errors, doc: d } = L.validatePlaceForm({
-      name: val('name'), category: val('category'), status: val('status'), regionId, regionName: r?.name || null, description: val('description'),
-      phone: val('phone'), address: val('address'), website: val('website'), lat: val('lat'), lng: val('lng'), priceLevel: val('priceLevel'), priceNote: val('priceNote'),
-      openingHours: val('openingHours'), kidsFriendly: val('kidsFriendly'),
-      ageGroups: F.ageGroups.filter((c) => c.checked).map((c) => c.value), features: F.features.filter((c) => c.checked).map((c) => c.value),
-      activities: val('activities'), alerts: val('alerts'), sourceName: val('sourceName'), sourceUrl: val('sourceUrl'), featured: F.featured.checked,
-    }, S.role);
-    if (errors.length) return out.replaceChildren(...errors.map((e) => msg(e)));
-    try {
-      const payload = { ...d, updatedAt: serverTimestamp() };
-      if (markVerified) payload.verifiedAt = serverTimestamp();
-      if (isNew) payload.createdAt = serverTimestamp();
-      await setDoc(doc(db, 'places', id), payload, { merge: true });
-      await audit(isNew ? 'place_create' : 'place_update', `places/${id}`, { status: d.status });
-      out.replaceChildren(msg('تم الحفظ. التغييرات تظهر في التطبيق إذا كانت الحالة «منشور».', 'ok'));
-      if (isNew) { const snap = await getDoc(doc(db, 'places', id)); return placeForm(body, { id, ...snap.data() }); }
-    } catch (e) { out.replaceChildren(msg(`رفض الخادم الحفظ: ${e.code || e.message}`)); }
-  }
-  async function del() {
-    if (!confirm('حذف المكان ووسائطه نهائيًا؟')) return;
-    try { await deleteDoc(doc(db, 'places', id)); await audit('place_delete', `places/${id}`); flash('تم الحذف (تُنظَّف الوسائط تلقائيًا من الخادم).'); S.tab = 'places'; render(); }
-    catch (e) { out.replaceChildren(msg(`رفض الخادم: ${e.code || e.message}`)); }
-  }
-  body.replaceChildren(form, isNew ? h('div', { class: 'card muted' }, 'احفظ المكان أولًا ثم أضف الصور والفيديوهات.') : mediaPanel(id, existing));
+  async inbox() {
+    const { items } = await api('inbox');
+    return items.length ? h('ul', { class: 'list' }, items.map((i) => h('li', {}, h('div', {}, h('b', {}, i.title), h('small', {}, ` ${i.details}`)),
+      h('button', { class: 'btn sm', onclick: () => run(() => api('resolve', { kind: i.kind, id: i.id }), 'تم.') }, 'تمّت المعالجة')))) : h('p', { class: 'muted' }, 'لا شيء بانتظار المراجعة.');
+  },
+
+  async settings() {
+    const { settings } = await api('get_settings');
+    const ads = h('input', { type: 'checkbox', checked: settings.adsEnabled !== false });
+    const note = h('input', { value: settings.siteMessage || '', maxlength: 300 });
+    return h('form', { class: 'card', onsubmit: (e) => { e.preventDefault(); run(() => api('set_settings', { adsEnabled: ads.checked, siteMessage: note.value }), 'حُفظت الإعدادات.'); } },
+      h('label', {}, ads, ' تفعيل الإعلانات (مفتاح إيقاف عن بُعد)'), field('رسالة عامة', note), h('button', { class: 'btn' }, 'حفظ'));
+  },
+
+  async staff() {
+    const { staff } = await api('list_staff');
+    const email = h('input', { type: 'email', required: true });
+    const role = sel('role', { admin: 'مدير', editor: 'محرر' }, 'editor');
+    return [
+      h('form', { class: 'card', onsubmit: (e) => { e.preventDefault(); run(() => api('set_role', { email: email.value, role: role.value }), 'حُدّثت الصلاحية.'); } },
+        h('h3', {}, 'منح صلاحية'), field('البريد', email), field('الدور', role), h('button', { class: 'btn' }, 'حفظ')),
+      h('ul', { class: 'list' }, staff.map((s) => h('li', {}, h('span', {}, `${s.email} — ${s.role}`), h('button', { class: 'btn sm danger', onclick: () => run(() => api('set_role', { email: s.email, role: 'none' }), 'أُزيلت.') }, 'إزالة')))),
+    ];
+  },
+
+  async audit() {
+    const { entries } = await api('audit_list');
+    return h('ul', { class: 'list' }, entries.map((a) => h('li', {}, h('span', {}, `${new Date(a.at).toLocaleString('ar-JO')} — ${a.action} — ${a.actor_email || ''} — ${a.target || ''}`))));
+  },
+};
+
+// ---------------------------------------------------------------- محرر المكان
+function placeEditor(p) {
+  const v = (k) => p?.[k] ?? '';
+  const camel = { regionId: p?.region_id, priceLevel: p?.price_level, priceNote: p?.price_note, openingHours: p?.opening_hours, kidsFriendly: p?.kids_friendly, ageGroups: p?.age_groups, sourceName: p?.source_name, sourceUrl: p?.source_url };
+  const form = h('form', { class: 'card', onsubmit: (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(e.target));
+    d.features = [...e.target.querySelectorAll('input[name=features]:checked')].map((x) => x.value);
+    d.ageGroups = [...e.target.querySelectorAll('input[name=ageGroups]:checked')].map((x) => x.value);
+    d.featured = e.target.elements.featured.checked;
+    const { errors, doc } = L.validatePlaceForm(d, S.role);
+    if (errors.length) { S.flash = { text: errors.join(' '), kind: 'err' }; return render(); }
+    run(async () => {
+      const r = await api('upsert_place', { id: p?.id, place: doc, markVerified: e.target.elements.markVerified.checked });
+      S.edit = r.place;
+    }, 'حُفظ المكان.');
+  } },
+    h('h3', {}, p ? 'تعديل مكان' : 'مكان جديد'), flash(),
+    field('الاسم', h('input', { name: 'name', value: v('name'), required: true })),
+    field('التصنيف', sel('category', L.CATEGORIES, p?.category || 'services')),
+    field('الحالة', sel('status', Object.fromEntries(Object.entries(L.STATUSES).filter(([k]) => L.allowedStatuses(S.role).includes(k))), p?.status || 'draft')),
+    field('المنطقة', h('select', { name: 'regionId' }, h('option', { value: '' }, '— غير محددة —'), S.regions.map((r) => h('option', { value: r.id, selected: r.id === p?.region_id }, r.name)))),
+    field('الوصف', h('textarea', { name: 'description', rows: 4 }, v('description'))),
+    field('الهاتف (فقط إن كان موثّقًا)', h('input', { name: 'phone', value: v('phone'), inputmode: 'tel' })),
+    field('العنوان', h('input', { name: 'address', value: v('address') })),
+    h('div', { class: 'row' }, field('خط العرض', h('input', { name: 'lat', value: v('lat'), inputmode: 'decimal' })), field('خط الطول', h('input', { name: 'lng', value: v('lng'), inputmode: 'decimal' }))),
+    field('الموقع الإلكتروني', h('input', { name: 'website', value: v('website'), type: 'url' })),
+    field('مستوى السعر', sel('priceLevel', { 1: 'اقتصادي', 2: 'متوسط', 3: 'مرتفع' }, String(camel.priceLevel ?? ''), '— غير محدد —')),
+    field('ملاحظة السعر', h('input', { name: 'priceNote', value: v('price_note') })),
+    field('ساعات العمل', h('input', { name: 'openingHours', value: v('opening_hours') })),
+    field('مناسب للأطفال', sel('kidsFriendly', { yes: 'نعم', no: 'لا' }, camel.kidsFriendly === true ? 'yes' : camel.kidsFriendly === false ? 'no' : '', '— غير محدد —')),
+    field('الفئات العمرية', checks('ageGroups', L.AGE_GROUPS, camel.ageGroups || [])),
+    field('المزايا', checks('features', L.FEATURES, p?.features || [])),
+    field('الأنشطة (سطر لكل نشاط)', h('textarea', { name: 'activities', rows: 3 }, (p?.activities || []).join('\n'))),
+    field('تنبيهات (سطر لكل تنبيه)', h('textarea', { name: 'alerts', rows: 2 }, (p?.alerts || []).join('\n'))),
+    field('اسم المصدر', h('input', { name: 'sourceName', value: v('source_name') })),
+    field('رابط المصدر', h('input', { name: 'sourceUrl', value: v('source_url'), type: 'url' })),
+    h('label', {}, h('input', { type: 'checkbox', name: 'featured', checked: p?.featured }), ' مميّز'),
+    h('label', {}, h('input', { type: 'checkbox', name: 'markVerified' }), ' تم التحقق من المعلومات الآن'),
+    h('div', { class: 'row' }, h('button', { class: 'btn', type: 'submit' }, 'حفظ'), h('button', { class: 'btn sm', type: 'button', onclick: () => { S.edit = null; render(); } }, 'رجوع'),
+      p && isAdmin() ? h('button', { class: 'btn sm danger', type: 'button', onclick: () => confirm('حذف المكان ووسائطه نهائيًا؟') && run(async () => { await api('delete_place', { id: p.id }); S.edit = null; }, 'حُذف المكان.') }, 'حذف') : null));
+  return p ? [form, mediaPanel(p)] : [form];
 }
 
 // ---------------------------------------------------------------- الوسائط
-function mediaPanel(placeId, place) {
-  const wrap = h('div', { class: 'card' }, h('h2', {}, 'الصور والفيديوهات'));
-  const list = h('div'); const uploads = h('div');
-  let items = [];
-  const file = h('input', { type: 'file', multiple: true, accept: 'image/jpeg,image/png,image/webp,video/mp4,video/webm' });
-
-  async function load() {
-    try {
-      const snap = await getDocs(query(collection(db, 'places', placeId, 'media'), orderBy('order'), limit(100)));
-      items = snap.docs.map((d) => ({ id: d.id, ...d.data() })); draw();
-    } catch (e) { list.replaceChildren(msg(`تعذّر تحميل الوسائط: ${e.code || e.message}`)); }
-  }
-  function draw() {
-    list.replaceChildren(...items.map((m, i) => {
-      const title = h('input', { value: m.title || '', placeholder: 'العنوان' });
-      const alt = h('input', { value: m.alt || '', placeholder: 'نص بديل (وصف للصورة)' });
-      const desc = h('input', { value: m.description || '', placeholder: 'وصف' });
-      return h('div', { class: 'media' },
-        m.type === 'video' ? h('video', { src: m.url, preload: 'none', controls: true, muted: true }) : h('img', { src: m.url, alt: m.alt || '', loading: 'lazy' }),
-        h('div', { class: 'grow', style: 'flex:1' }, title, alt, desc, h('div', { class: 'row', style: 'margin-top:6px' },
-          h('button', { onclick: async () => { await updateDoc(doc(db, 'places', placeId, 'media', m.id), { title: title.value, alt: alt.value, description: desc.value }); await audit('media_update', `places/${placeId}/media/${m.id}`); flash('تم حفظ بيانات الوسيط.'); } }, 'حفظ'),
-          m.type === 'image' ? h('button', { onclick: () => setCover(m) }, m.isCover ? '★ غلاف' : 'اجعلها الغلاف') : null,
-          h('button', { disabled: i === 0, onclick: () => move(i, i - 1) }, '↑'), h('button', { disabled: i === items.length - 1, onclick: () => move(i, i + 1) }, '↓'),
-          h('button', { class: 'danger', onclick: () => remove(m) }, 'حذف'))));
-    }));
-  }
-  async function move(from, to) {
-    const next = L.reorder(items, from, to);
-    await Promise.all(next.map((m) => updateDoc(doc(db, 'places', placeId, 'media', m.id), { order: m.order })));
-    items = next; draw();
-  }
-  async function setCover(m) {
-    await Promise.all(items.map((x) => updateDoc(doc(db, 'places', placeId, 'media', x.id), { isCover: x.id === m.id })));
-    await updateDoc(doc(db, 'places', placeId), { coverUrl: m.url, coverAlt: m.alt || place?.name || '', updatedAt: serverTimestamp() });
-    items = items.map((x) => ({ ...x, isCover: x.id === m.id })); draw();
-  }
-  async function remove(m) {
-    if (!confirm('حذف هذا الوسيط؟')) return;
-    try {
-      // ١) نحذف السجل أولًا (لا يبقى مرجع لملف غير موجود) ٢) الدالة السحابية تحذف الملف؛ ونحاول حذفه من هنا أيضًا.
-      await deleteDoc(doc(db, 'places', placeId, 'media', m.id));
-      if (m.storagePath) await deleteObject(ref(storage, m.storagePath)).catch(() => {});
-      if (place?.coverUrl === m.url) await updateDoc(doc(db, 'places', placeId), { coverUrl: null, coverAlt: null });
-      await audit('media_delete', `places/${placeId}/media/${m.id}`);
-      items = items.filter((x) => x.id !== m.id); draw();
-    } catch (e) { flash(`رفض الخادم الحذف: ${e.code || e.message}`, 'err'); }
-  }
-
-  function videoDuration(f) {
-    return new Promise((res) => { const v = document.createElement('video'); v.preload = 'metadata'; v.onloadedmetadata = () => { res(Math.round(v.duration) || null); URL.revokeObjectURL(v.src); }; v.onerror = () => res(null); v.src = URL.createObjectURL(f); });
-  }
-  function startUpload(f) {
-    const kind = L.kindOf(f); const row = h('div', { class: 'card' }); uploads.append(row);
-    const problem = L.validateUpload(f, kind);
-    if (problem) return row.append(msg(`${f.name}: ${problem}`));
-    const run = async () => {
-      const bar = h('progress', { max: 100, value: 0 }); const status = h('div', { class: 'muted' }, `${f.name}…`);
-      row.replaceChildren(status, bar);
-      const dur = kind === 'video' ? await videoDuration(f) : null;
-      if (dur && dur > L.LIMITS.video.maxSeconds) return row.replaceChildren(msg(`${f.name}: المدة تتجاوز ${L.LIMITS.video.maxSeconds} ثانية.`));
-      const name = L.safeFileName(f.name); const path = L.storagePathFor(placeId, kind, name);
-      const task = uploadBytesResumable(ref(storage, path), f, { contentType: f.type, cacheControl: 'public,max-age=31536000' });
-      task.on('state_changed', (s) => { bar.value = (s.bytesTransferred / s.totalBytes) * 100; },
-        (e) => row.replaceChildren(msg(`${f.name}: فشل الرفع (${e.code}).`), h('button', { onclick: run }, 'إعادة المحاولة')),
-        async () => {
-          try {
-            const url = await getDownloadURL(task.snapshot.ref);
-            const mid = name.replace(/\.[^.]+$/, '');
-            const m = { type: kind, url, storagePath: path, title: '', alt: '', description: '', order: items.length, isCover: false, durationSec: dur, source: '', license: '', uploadedBy: auth.currentUser.uid, uploadedAt: serverTimestamp(), contentType: f.type, size: f.size };
-            await setDoc(doc(db, 'places', placeId, 'media', mid), m);
-            await audit('media_upload', `places/${placeId}/media/${mid}`);
-            row.replaceChildren(msg(`${f.name}: تم الرفع. أضف العنوان والنص البديل والمصدر/الترخيص من القائمة.`, 'ok'));
-            await load();
-          } catch (e) {
-            // فشل كتابة السجل: نزيل الملف كي لا يبقى يتيمًا
-            await deleteObject(ref(storage, path)).catch(() => {});
-            row.replaceChildren(msg(`${f.name}: فشل حفظ السجل (${e.code || e.message}). حُذف الملف.`), h('button', { onclick: run }, 'إعادة المحاولة'));
-          }
-        });
-    };
-    run();
-  }
-  file.addEventListener('change', () => { [...file.files].forEach(startUpload); file.value = ''; });
-  wrap.append(h('p', { class: 'muted' }, 'صور: JPG/PNG/WebP حتى 10MB. فيديو: MP4/WebM حتى 60MB و3 دقائق. الصور الكبيرة تُرفع كما هي؛ صغّرها قبل الرفع لتوفير بيانات المستخدمين. لا ترفع إلا ما تملكه أو لديك إذن باستخدامه.'), file, uploads, list);
-  load();
-  return wrap;
-}
-
-// ---------------------------------------------------------------- المناطق
-async function regionsView(body) {
-  const list = h('div'); const out = h('div');
-  const name = h('input', { placeholder: 'اسم المنطقة' });
-  const type = h('select', {}, Object.entries(L.REGION_TYPES).map(([k, v]) => h('option', { value: k }, v)));
-  const parent = h('input', { placeholder: 'معرّف المنطقة الأم (اختياري)' });
-  const status = h('select', {}, h('option', { value: 'published' }, 'منشور'), h('option', { value: 'draft' }, 'مسودة'));
-  const canWrite = S.role === 'owner' || S.role === 'admin';
-  async function load() {
-    try {
-      const snap = await getDocs(query(collection(db, 'regions'), orderBy('name'), limit(300)));
-      list.replaceChildren(...snap.docs.map((d) => { const r = d.data(); return h('div', { class: 'card row' }, h('div', { class: 'grow' }, `${L.REGION_TYPES[r.type] || ''} ${r.name} `, h('span', { class: 'muted' }, `(${d.id}${r.parentId ? ' ⟵ ' + r.parentId : ''})`), ' ', h('span', { class: `badge b-${r.status}` }, r.status)),
-        canWrite ? h('button', { class: 'danger', onclick: async () => { if (confirm('حذف المنطقة؟')) { try { await deleteDoc(doc(db, 'regions', d.id)); await audit('region_delete', `regions/${d.id}`); load(); } catch (e) { out.replaceChildren(msg(`رفض: ${e.code}`)); } } } }, 'حذف') : null); }));
-    } catch (e) { list.replaceChildren(msg(`تعذّر التحميل: ${e.code || e.message}`)); }
-  }
-  body.replaceChildren(canWrite ? h('div', { class: 'card' }, h('h3', {}, 'إضافة منطقة'), name, type, parent, status,
-    h('button', { class: 'primary', style: 'margin-top:10px', onclick: async () => {
-      if (!name.value.trim()) return out.replaceChildren(msg('الاسم مطلوب.'));
-      const id = L.slugId(name.value);
-      try { await setDoc(doc(db, 'regions', id), { name: name.value.trim(), type: type.value, parentId: parent.value.trim() || null, status: status.value, updatedAt: serverTimestamp() }); await audit('region_create', `regions/${id}`); name.value = ''; out.replaceChildren(msg('تمت الإضافة.', 'ok')); load(); }
-      catch (e) { out.replaceChildren(msg(`رفض الخادم: ${e.code || e.message}`)); }
-    } }, 'إضافة'), out) : msg('إدارة المناطق للمدير فقط.', 'warn'), list);
-  load();
-}
-
-// ---------------------------------------------------------------- البلاغات والاقتراحات
-async function inboxView(body) {
-  const list = h('div');
-  const load = async () => {
-    try {
-      const [r, s] = await Promise.all([getDocs(query(collection(db, 'reports'), where('status', '==', 'open'), limit(50))), getDocs(query(collection(db, 'suggestions'), where('status', '==', 'pending'), limit(50)))]);
-      const rows = [...r.docs.map((d) => ['reports', d, `بلاغ: ${d.data().reason}`, 'resolved']), ...s.docs.map((d) => ['suggestions', d, `اقتراح: ${d.data().name}`, 'reviewed'])];
-      list.replaceChildren(...(rows.length ? rows.map(([col, d, title, next]) => h('div', { class: 'card' }, h('b', {}, title), h('div', { class: 'muted' }, d.data().details || ''), col === 'reports' ? h('div', { class: 'muted' }, `المكان: ${d.data().placeId}`) : h('div', { class: 'muted' }, `${d.data().regionName || ''} — ${L.CATEGORIES[d.data().category] || ''}`),
-        h('button', { onclick: async () => { await updateDoc(doc(db, col, d.id), { status: next }); await audit(`resolve_${col}`, `${col}/${d.id}`); load(); } }, 'تمت المراجعة'))) : [h('p', { class: 'muted' }, 'لا شيء بانتظار المراجعة.')]));
-    } catch (e) { list.replaceChildren(msg(`تعذّر التحميل: ${e.code || e.message}`)); }
+function mediaPanel(p) {
+  const box = h('div', { class: 'card' }, h('h3', {}, 'الصور والفيديو'), h('p', { class: 'muted' }, 'جارٍ التحميل…'));
+  const reload = async () => {
+    const { media } = await api('list_media', { placeId: p.id });
+    const list = media.map((m, i) => h('li', {},
+      m.type === 'video' ? h('video', { src: m.url, controls: true, preload: 'metadata', width: 120 }) : h('img', { src: m.url, alt: m.alt || '', width: 80, loading: 'lazy' }),
+      h('small', {}, m.is_cover ? ' (الغلاف) ' : ' ', m.title || ''),
+      h('span', { class: 'row' },
+        m.type === 'image' && !m.is_cover ? h('button', { class: 'btn sm', onclick: () => run(() => api('set_cover', { placeId: p.id, mediaId: m.id }), 'عُيّن الغلاف.') }, 'غلاف') : null,
+        i > 0 ? h('button', { class: 'btn sm', onclick: () => run(() => api('reorder_media', { placeId: p.id, order: L.reorder(media, i, i - 1).map((x) => x.id) })) }, '↑') : null,
+        isAdmin() ? h('button', { class: 'btn sm danger', onclick: () => confirm('حذف الوسيط؟') && run(() => api('delete_media', { placeId: p.id, mediaId: m.id }), 'حُذف.') }, 'حذف') : null)));
+    const file = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,video/mp4,video/webm' });
+    const alt = h('input', { placeholder: 'وصف الصورة (للقارئات الصوتية)' });
+    const src = h('input', { placeholder: 'مصدر الصورة/الترخيص (مطلوب لغير ملكك)' });
+    const status = h('p', { class: 'muted' });
+    const up = h('button', { class: 'btn', onclick: async () => {
+      const f = file.files[0]; if (!f) return;
+      const kind = L.kindOf(f); const bad = L.validateUpload(f, kind);
+      if (bad) { status.textContent = bad; return; }
+      up.disabled = true; status.textContent = 'جارٍ الرفع…';
+      try {
+        const u = await api('create_upload', { placeId: p.id, kind, contentType: f.type, size: f.size, fileName: f.name });
+        if (!sbClient) { const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm'); sbClient = createClient(config.supabaseUrl, config.supabaseAnonKey, { auth: { persistSession: false } }); }
+        const r = await sbClient.storage.from('media').uploadToSignedUrl(u.path, u.token, f, { contentType: f.type });
+        if (r.error) throw new Error('فشل رفع الملف.');
+        await api('add_media', { placeId: p.id, kind, path: u.path, contentType: f.type, size: f.size, alt: alt.value, source: src.value, license: src.value, title: f.name.replace(/\.[^.]+$/, '') });
+        S.flash = { text: 'رُفع الملف.', kind: 'ok' }; render();
+      } catch (e) { status.textContent = e.message; up.disabled = false; }
+    } }, 'رفع');
+    box.replaceChildren(h('h3', {}, 'الصور والفيديو'), media.length ? h('ul', { class: 'list' }, list) : h('p', { class: 'muted' }, 'لا وسائط بعد.'),
+      h('p', { class: 'muted' }, 'ارفع فقط صورًا تملكها أو مرخّصة. الحد: صورة 10MB، فيديو 60MB.'), file, alt, src, up, status);
   };
-  body.replaceChildren(list); load();
-}
-
-// ---------------------------------------------------------------- الإعدادات
-async function settingsView(body) {
-  if (S.role === 'editor') return body.replaceChildren(msg('الإعدادات للمدير فقط.', 'warn'));
-  const ref0 = doc(db, 'settings', 'public');
-  const snap = await getDoc(ref0).catch(() => null);
-  const cur = snap?.exists() ? snap.data() : { adsEnabled: true };
-  const ads = h('input', { type: 'checkbox', checked: cur.adsEnabled !== false, style: 'width:auto;min-height:auto' });
-  const note = h('input', { value: cur.siteMessage || '', placeholder: 'رسالة تظهر للمستخدمين (اختياري)' });
-  const out = h('div');
-  body.replaceChildren(h('div', { class: 'card' }, h('h3', {}, 'إعدادات عامة'),
-    h('label', {}, ads, ' السماح بعرض الإعلانات (مفتاح إيقاف عن بُعد)'),
-    msg('معرّف Start.io (App ID) لا يُخزَّن هنا ولا في قاعدة البيانات. يُمرَّر وقت بناء التطبيق عبر GitHub Secret باسم STARTIO_APP_ID. هذا المفتاح فقط يوقف عرض الإعلانات إن لزم.', 'warn'),
-    h('label', {}, 'رسالة عامة'), note,
-    h('button', { class: 'primary', style: 'margin-top:10px', onclick: async () => {
-      try { await setDoc(ref0, { adsEnabled: ads.checked, siteMessage: note.value.slice(0, 300), updatedAt: serverTimestamp() }, { merge: true }); await audit('settings_update', 'settings/public'); out.replaceChildren(msg('تم الحفظ.', 'ok')); }
-      catch (e) { out.replaceChildren(msg(`رفض الخادم: ${e.code || e.message}`)); }
-    } }, 'حفظ'), out));
-}
-
-// ---------------------------------------------------------------- الصلاحيات (المالك فقط)
-function rolesView(body) {
-  const email = h('input', { type: 'email', placeholder: 'بريد المستخدم (يجب أن يكون قد سجّل وأكّد بريده)' });
-  const role = h('select', {}, h('option', { value: 'editor' }, 'محرر (مسودات/مراجعة فقط)'), h('option', { value: 'admin' }, 'مدير'), h('option', { value: 'none' }, 'إزالة الصلاحيات'));
-  const out = h('div');
-  body.replaceChildren(h('div', { class: 'card' }, h('h3', {}, 'تعيين الأدوار'), msg('التنفيذ يتم في الخادم (Cloud Function) بعد التحقق أنك المالك. لا يتغير شيء من المتصفح مباشرة.', 'warn'), email, role,
-    h('button', { class: 'primary', style: 'margin-top:10px', onclick: async () => {
-      try { await httpsCallable(fns, 'setRole')({ email: email.value.trim(), role: role.value }); out.replaceChildren(msg('تم. على المستخدم تسجيل الخروج والدخول من جديد.', 'ok')); }
-      catch (e) { out.replaceChildren(msg(`رفض الخادم: ${e.message}`)); }
-    } }, 'تطبيق'), out));
-}
-
-// ---------------------------------------------------------------- سجل العمليات
-async function auditView(body) {
-  try {
-    const snap = await getDocs(query(collection(db, 'audit'), orderBy('at', 'desc'), limit(50)));
-    body.replaceChildren(...snap.docs.map((d) => { const a = d.data(); return h('div', { class: 'card' }, h('b', {}, a.action), ' ', h('span', { class: 'muted' }, `${a.targetPath || ''} — ${a.actorUid || ''} — ${a.at?.toDate?.().toLocaleString('ar-JO') || ''}`)); }));
-  } catch (e) { body.replaceChildren(msg(`تعذّر التحميل: ${e.code || e.message}`)); }
+  reload().catch((e) => box.replaceChildren(msg(e.message)));
+  return box;
 }

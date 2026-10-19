@@ -24,7 +24,7 @@ import jo.guide.app.ui.components.*
 import kotlinx.coroutines.launch
 
 /**
- * لوحة الإدارة داخل التطبيق: تظهر فقط لحساب لديه claim الإدارة (يتحقق منه الخادم أيضًا في كل استعلام).
+ * لوحة الإدارة داخل التطبيق: تظهر فقط لحساب يحدّد الخادم أن دوره مدير (ويتحقق منه الخادم في كل طلب).
  * الإدارة الكاملة للمحتوى والوسائط في لوحة الويب (admin-web).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,7 +72,7 @@ fun AdminScreen(vm: AppViewModel, onBack: () -> Unit) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Stat("الأماكن", s.places, Modifier.weight(1f)); Stat("منشور", s.published, Modifier.weight(1f)) }
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Stat("مسودات", s.drafts, Modifier.weight(1f)); Stat("قيد المراجعة", s.inReview, Modifier.weight(1f)) }
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Stat("المستخدمون", s.users, Modifier.weight(1f)); Stat("الوسائط", s.media, Modifier.weight(1f)) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Stat("المناطق", s.regions, Modifier.weight(1f)); Stat("الوسائط", s.media, Modifier.weight(1f)) }
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Stat("بلاغات مفتوحة", s.openReports, Modifier.weight(1f)); Stat("اقتراحات", s.pendingSuggestions, Modifier.weight(1f)) }
                     }
                 }

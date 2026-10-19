@@ -2,26 +2,24 @@ package jo.guide.app.data
 
 import android.content.Context
 import com.google.firebase.FirebaseApp
-import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.SetOptions
-import com.google.firebase.auth.FirebaseAuth
-import kotlinx.coroutines.tasks.await
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.IOException
 
 object FirebaseStatus {
-    /** Firebase مهيّأ فقط إذا وُجد google-services.json أثناء البناء. */
+    /** Firebase (للدخول فقط) مهيّأ إذا وُجد google-services.json أثناء البناء. */
     fun isConfigured(context: Context): Boolean = FirebaseApp.getApps(context).isNotEmpty()
 }
 
-data class PlacePage(val places: List<Place>, val fromCache: Boolean, val next: DocumentSnapshot?)
+/** next = إزاحة الصفحة التالية (offset)، أو null عند انتهاء النتائج. */
+data class PlacePage(val places: List<Place>, val fromCache: Boolean, val next: Int?)
 
 interface PlaceRepository {
-    /** true عندما تكون البيانات تجريبية (Firebase غير مربوط). */
+    /** true عندما تكون البيانات تجريبية (Supabase غير مربوط). */
     val isSample: Boolean
     suspend fun loadRegions(): List<Region>
-    suspend fun loadPlaces(cursor: DocumentSnapshot?): PlacePage
+    suspend fun loadPlaces(cursor: Int?): PlacePage
     suspend fun loadMedia(placeId: String): List<PlaceMedia>
     suspend fun adsRemoteEnabled(): Boolean
     suspend fun submitReport(placeId: String, reason: String, details: String): Result<Unit>
@@ -33,92 +31,87 @@ interface PlaceRepository {
 class SeedPlaceRepository : PlaceRepository {
     override val isSample = true
     override suspend fun loadRegions() = SeedData.regions
-    override suspend fun loadPlaces(cursor: DocumentSnapshot?) = PlacePage(SeedData.places, false, null)
+    override suspend fun loadPlaces(cursor: Int?) = PlacePage(SeedData.places, false, null)
     override suspend fun loadMedia(placeId: String) = emptyList<PlaceMedia>()
     override suspend fun adsRemoteEnabled() = true
     override suspend fun submitReport(placeId: String, reason: String, details: String) =
-        Result.failure<Unit>(IllegalStateException("لم يتم ربط Firebase بعد، لا يمكن إرسال البلاغات."))
+        Result.failure<Unit>(IllegalStateException("لم يتم ربط Supabase بعد، لا يمكن إرسال البلاغات."))
     override suspend fun submitSuggestion(name: String, category: String, regionName: String, details: String) =
-        Result.failure<Unit>(IllegalStateException("لم يتم ربط Firebase بعد، لا يمكن إرسال الاقتراحات."))
+        Result.failure<Unit>(IllegalStateException("لم يتم ربط Supabase بعد، لا يمكن إرسال الاقتراحات."))
     override suspend fun saveFavorites(uid: String, ids: Set<String>) = Unit
     override suspend fun loadFavorites(uid: String) = emptySet<String>()
 }
 
-class FirestorePlaceRepository : PlaceRepository {
+/**
+ * يقرأ المحتوى المنشور من Supabase (PostgREST + RLS). الصفحة الأولى تُخزَّن محليًا؛
+ * عند انقطاع الاتصال تُعرض النسخة المخزنة مع علامة fromCache كي يُنبَّه المستخدم أن المعلومات قد تكون قديمة.
+ */
+class SupabasePlaceRepository(private val context: Context) : PlaceRepository {
     override val isSample = false
-    private val db get() = FirebaseFirestore.getInstance()
+
+    private fun cacheFile(name: String) = File(context.cacheDir, name)
+
+    private suspend fun cachedRest(query: String, cacheName: String): Pair<JSONArray, Boolean> =
+        try {
+            val arr = SupabaseApi.rest(query)
+            runCatching { cacheFile(cacheName).writeText(arr.toString()) }
+            arr to false
+        } catch (e: IOException) {
+            val cached = runCatching { JSONArray(cacheFile(cacheName).readText()) }.getOrNull() ?: throw e
+            cached to true
+        }
 
     override suspend fun loadRegions(): List<Region> {
-        val snap = db.collection("regions").whereEqualTo("status", "published").get().await()
-        return snap.documents.mapNotNull { d ->
-            val name = d.getString("name") ?: return@mapNotNull null
-            Region(d.id, name, RegionType.fromId(d.getString("type")), d.getString("parentId"))
-        }.sortedBy { it.name }
+        val (arr, _) = cachedRest("regions?select=id,name,type,parent_id&status=eq.published&order=name&limit=500", "regions.json")
+        return (0 until arr.length()).mapNotNull { regionFromJson(arr.getJSONObject(it)) }
     }
 
-    /** يقرأ المنشور فقط، على صفحات (Pagination). الفهرس المطلوب في firestore.indexes.json. */
-    override suspend fun loadPlaces(cursor: DocumentSnapshot?): PlacePage {
-        var q: Query = db.collection("places")
-            .whereEqualTo("status", "published")
-            .orderBy("name")
-            .limit(PAGE_SIZE)
-        if (cursor != null) q = q.startAfter(cursor)
-        val snap = q.get().await()
-        val places = snap.documents.mapNotNull { d -> d.data?.let { Place.fromMap(d.id, it) } }
-        val next = if (snap.size() >= PAGE_SIZE) snap.documents.lastOrNull() else null
-        return PlacePage(places, snap.metadata.isFromCache, next)
+    /** المنشور فقط، على صفحات. أول صفحة تعمل بلا اتصال من الكاش. */
+    override suspend fun loadPlaces(cursor: Int?): PlacePage {
+        val offset = cursor ?: 0
+        val query = "places?select=*&status=eq.published&order=name&limit=$PAGE_SIZE&offset=$offset"
+        val (arr, fromCache) = if (offset == 0) cachedRest(query, "places_page0.json") else SupabaseApi.rest(query) to false
+        val places = (0 until arr.length()).mapNotNull { placeFromJson(arr.getJSONObject(it)) }
+        val next = if (!fromCache && arr.length() >= PAGE_SIZE) offset + PAGE_SIZE else null
+        return PlacePage(places, fromCache, next)
     }
 
     override suspend fun loadMedia(placeId: String): List<PlaceMedia> {
-        val snap = db.collection("places").document(placeId).collection("media")
-            .orderBy("order").limit(60).get().await()
-        return snap.documents.mapNotNull { d -> d.data?.let { PlaceMedia.fromMap(d.id, it) } }
+        val arr = SupabaseApi.rest("media?select=*&place_id=eq.${SupabaseApi.enc(placeId)}&order=sort_order&limit=60")
+        return (0 until arr.length()).mapNotNull { mediaFromJson(arr.getJSONObject(it)) }
     }
 
     override suspend fun adsRemoteEnabled(): Boolean = try {
-        val d = db.collection("settings").document("public").get().await()
-        d.getBoolean("adsEnabled") ?: true
+        val arr = SupabaseApi.rest("settings?select=value&key=eq.public&limit=1")
+        val v: JSONObject? = arr.optJSONObject(0)?.optJSONObject("value")
+        v?.optBoolean("adsEnabled", true) ?: true
     } catch (_: Exception) {
         true
     }
 
     override suspend fun submitReport(placeId: String, reason: String, details: String): Result<Unit> = runCatching {
-        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: error("سجّل الدخول لإرسال بلاغ.")
-        db.collection("reports").add(
-            mapOf(
-                "placeId" to placeId, "reason" to reason.take(80), "details" to details.take(1000),
-                "reporterUid" to uid, "status" to "open", "createdAt" to FieldValue.serverTimestamp(),
-            )
-        ).await()
+        SupabaseApi.api("submit_report", JSONObject().put("placeId", placeId).put("reason", reason.take(80)).put("details", details.take(1000)))
         Unit
     }
 
-    override suspend fun submitSuggestion(name: String, category: String, regionName: String, details: String): Result<Unit> =
-        runCatching {
-            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: error("سجّل الدخول لإرسال اقتراح.")
-            db.collection("suggestions").add(
-                mapOf(
-                    "name" to name.take(120), "category" to category, "regionName" to regionName.take(80),
-                    "details" to details.take(1000), "suggestedByUid" to uid, "status" to "pending",
-                    "createdAt" to FieldValue.serverTimestamp(),
-                )
-            ).await()
-            Unit
-        }
+    override suspend fun submitSuggestion(name: String, category: String, regionName: String, details: String): Result<Unit> = runCatching {
+        SupabaseApi.api(
+            "submit_suggestion",
+            JSONObject().put("name", name.take(120)).put("category", category).put("regionName", regionName.take(80)).put("details", details.take(1000)),
+        )
+        Unit
+    }
 
     override suspend fun saveFavorites(uid: String, ids: Set<String>) {
-        db.collection("users").document(uid).set(
-            mapOf("favorites" to ids.toList().take(500), "updatedAt" to FieldValue.serverTimestamp()),
-            SetOptions.merge(),
-        ).await()
+        SupabaseApi.api("save_favorites", JSONObject().put("ids", JSONArray(ids.toList().take(500))))
     }
 
     override suspend fun loadFavorites(uid: String): Set<String> {
-        val d = db.collection("users").document(uid).get().await()
-        return (d.get("favorites") as? List<*>)?.filterIsInstance<String>()?.toSet() ?: emptySet()
+        val a = SupabaseApi.api("load_favorites").optJSONArray("ids") ?: return emptySet()
+        return (0 until a.length()).mapNotNull { a.optString(it).takeIf { s -> s.isNotBlank() } }.toSet()
     }
 
     companion object {
-        const val PAGE_SIZE = 30L
+        const val PAGE_SIZE = 30
     }
 }

@@ -107,15 +107,15 @@ fun AccountScreen(vm: AppViewModel, onAdmin: () -> Unit) {
 }
 
 /**
- * قسم «للمالك»: لا يمنح شيئًا بنفسه. يستدعي دالة الخادم bootstrapOwner التي ترفض أي حساب
- * غير مطابق لـ ADMIN_EMAIL المضبوط في الخادم، أو بريده غير مؤكَّد.
+ * قسم «للمالك»: لا يمنح شيئًا بنفسه. يطلب من الخادم إعادة حساب دورك؛ الخادم يمنح المالك فقط
+ * إذا طابق بريدك ADMIN_EMAIL المضبوط عنده وكان بريدك مؤكَّدًا.
  */
 @Composable
 private fun OwnerSetup(vm: AppViewModel, busy: Boolean) {
     var open by remember { mutableStateOf(false) }
     TextButton({ open = !open }) { Text("هل أنت مالك المشروع؟") }
-    if (open) InfoBanner("إذا كان هذا الحساب هو بريد المالك المعتمد في إعدادات الخادم، اضغط الزر لتهيئة صلاحية المدير. سيرفض الخادم الطلب لأي حساب آخر.", JG.Navy)
-    if (open) BigButton("تهيئة صلاحية المالك", Icons.Filled.Key, Modifier.fillMaxWidth(), enabled = !busy) { vm.auth.bootstrapOwner() }
+    if (open) InfoBanner("إذا كان هذا الحساب هو بريد المالك المعتمد في إعدادات الخادم أو مُنح دورًا من المالك، اضغط الزر لإعادة فحص الصلاحية. لا يمنح الزر شيئًا لأي حساب آخر.", JG.Navy)
+    if (open) BigButton("إعادة فحص الصلاحية", Icons.Filled.Key, Modifier.fillMaxWidth(), enabled = !busy) { vm.auth.recheckAccess() }
 }
 
 @Composable

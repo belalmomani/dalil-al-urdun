@@ -2,7 +2,7 @@ package jo.guide.app.data
 
 import android.content.Context
 
-/** المفضلة محليًا دائمًا (تعمل للزوار)، وتُزامَن مع Firestore فقط عند تسجيل الدخول. */
+/** المفضلة محليًا دائمًا (تعمل للزوار)، وتُزامَن مع Supabase فقط عند تسجيل الدخول. */
 class FavoritesStore(context: Context) {
     private val prefs = context.getSharedPreferences("favorites", Context.MODE_PRIVATE)
 
