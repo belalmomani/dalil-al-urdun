@@ -1,7 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.GhostThief" parent="Theme.Material3.Light.NoActionBar">
-        <item name="colorPrimary">#1565C0</item>
-        <item name="android:statusBarColor">#FF1565C0</item>
-        <item name="android:windowBackground">#FFE3F2FD</item>
+    <style name="Theme.JordanGuide" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/navy_dark</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

@@ -52,6 +52,8 @@ jobs:
             echo "KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
             echo "KEY_ALIAS=dalil" >> "$GITHUB_ENV"
             echo "KEY_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+          else
+            echo "::warning::لا يوجد KEYSTORE_BASE64: توقيع عشوائي في كل بناء، ولن يُثبَّت APK فوق السابق. أضف السرين KEYSTORE_BASE64 و KEYSTORE_PASSWORD."
           fi
 
       - name: اختبارات الوحدة
