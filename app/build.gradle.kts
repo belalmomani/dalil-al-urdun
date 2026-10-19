@@ -1,83 +1,85 @@
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.compose)
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
 }
 
-// يُطبَّق مكوّن Google Services فقط عند وجود google-services.json (غير مرفوع إلى المستودع).
-// بدونه يُبنى التطبيق بنجاح ويعمل في «وضع البيانات التجريبية» دون Firebase.
-if (file("google-services.json").exists()) {
+// يُفعَّل Firebase فقط إذا وضعتَ ملف google-services.json الخاص بك داخل مجلد app/
+val hasFirebase = file("google-services.json").exists()
+if (hasFirebase) {
     apply(plugin = "com.google.gms.google-services")
 }
 
-fun config(name: String): String =
-    (project.findProperty(name) as String?) ?: System.getenv(name) ?: ""
+// التوقيع بمفتاحك الخاص: يُفعَّل فقط إذا وُجدت متغيرات البيئة (يضبطها GitHub Actions من الأسرار).
+// لا تضع ملف المفتاح ولا كلمات المرور في المستودع أبداً.
+// رقم الإصدار يزيد تلقائياً مع كل بناء على GitHub (GITHUB_RUN_NUMBER) فيُثبَّت كتحديث فوق القديم.
+val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toIntOrNull() ?: 1
 
-// ---- Start.io: ميتا-داتا App ID تُحقن في المانيفست فقط عند توفر المعرّف ----
-// بدون معرّف: لا تُضاف الميتا-داتا ولا يُهيَّأ SDK وتبقى الإعلانات معطلة بالكامل.
-val safeValue = Regex("^[^\\s\"\\\\]*$")
-val supabaseUrl = config("SUPABASE_URL").trim()
-val supabaseAnon = config("SUPABASE_ANON_KEY").trim()
-require(safeValue.matches(supabaseUrl) && safeValue.matches(supabaseAnon)) { "SUPABASE_URL/SUPABASE_ANON_KEY تحتوي محارف غير صالحة" }
-val startioId = config("STARTIO_APP_ID").trim()
-val baseManifest = file("src/main/AndroidManifest.xml")
-val manifestForBuild: File = if (startioId.isNotEmpty()) {
-    require(Regex("^[A-Za-z0-9_-]{4,64}$").matches(startioId)) { "STARTIO_APP_ID يحتوي محارف غير صالحة" }
-    val out = layout.buildDirectory.file("generated/manifest/AndroidManifest.xml").get().asFile
-    out.parentFile.mkdirs()
-    out.writeText(
-        baseManifest.readText().replace(
-            "</application>",
-            "    <meta-data android:name=\"com.startapp.sdk.APPLICATION_ID\" android:value=\"$startioId\" />\n    </application>"
-        )
-    )
-    out
-} else baseManifest
+val keystorePath: String? = System.getenv("KEYSTORE_PATH")
+val hasKeystore = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
 
 android {
-    namespace = "jo.guide.app"
+    namespace = "com.ghostthief.game"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "jo.guide.app"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
-
-        // معرّف Start.io يأتي من البناء فقط. فارغ = الإعلانات معطلة.
-        buildConfigField("String", "STARTIO_APP_ID", "\"${config("STARTIO_APP_ID")}\"")
-        buildConfigField("String", "SUPABASE_URL", "\"$supabaseUrl\"")
-        buildConfigField("String", "SUPABASE_ANON_KEY", "\"$supabaseAnon\"")
-        buildConfigField("String", "ADMIN_PANEL_URL", "\"${config("ADMIN_PANEL_URL")}\"")
-        buildConfigField("boolean", "ADS_CONFIGURED", (startioId.isNotEmpty()).toString())
+        applicationId = "com.ghostthief.game"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = runNumber * 10
+        versionName = "0.3.$runNumber"
+        buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebase.toString())
     }
 
-    sourceSets.getByName("main").manifest.srcFile(manifestForBuild)
+    buildFeatures { buildConfig = true }
+
+    flavorDimensions += "ads"
+    productFlavors {
+        // النسخة الافتراضية: بلا إعلانات ولا أي SDK إعلاني (الأنسب لألعاب الأطفال)
+        create("noads") {
+            dimension = "ads"
+            versionCode = runNumber * 10
+            buildConfigField("boolean", "ADS_ENABLED", "false")
+            buildConfigField("String", "STARTIO_APP_ID", "\"\"")
+        }
+        // نسخة تجريبية مع Start.io (وضع child-directed مفعّل في الـ manifest الخاص بها)
+        create("ads") {
+            dimension = "ads"
+            versionCode = runNumber * 10 + 1
+            buildConfigField("boolean", "ADS_ENABLED", "true")
+            val appId = (project.findProperty("STARTIO_APP_ID") as String?) ?: ""
+            buildConfigField("String", "STARTIO_APP_ID", "\"$appId\"")
+        }
+    }
 
     signingConfigs {
-        // توقيع الإصدار يتطلب مفاتيح تضعها أنت كأسرار في GitHub (انظر README).
-        if (config("KEYSTORE_PATH").isNotEmpty()) {
+        // مفتاح تجريبي ثابت داخل المشروع: يجعل كل بناء بنفس التوقيع فيعمل التحديث فوق القديم بلا حذف.
+        // للتجربة فقط — لا تنشر به على Google Play (استخدم مفتاحك عبر الأسرار).
+        create("stable") {
+            storeFile = file("ghostthief-debug.jks")
+            storePassword = "ghostthief-debug"
+            keyAlias = "ghostthief"
+            keyPassword = "ghostthief-debug"
+        }
+        if (hasKeystore) {
             create("release") {
-                storeFile = file(config("KEYSTORE_PATH"))
-                storePassword = config("KEYSTORE_PASSWORD")
-                keyAlias = config("KEY_ALIAS")
-                keyPassword = config("KEY_PASSWORD")
+                storeFile = file(keystorePath!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
             }
         }
     }
 
     buildTypes {
         debug {
-            versionNameSuffix = "-debug"
-            // نفس المفتاح للنسخة التجريبية كي تبقى بصمات SHA ثابتة في Firebase.
-            signingConfigs.findByName("release")?.let { signingConfig = it }
+            // مفتاحك (إن وُجد في الأسرار) وإلا المفتاح التجريبي الثابت
+            signingConfig = signingConfigs.getByName(if (hasKeystore) "release" else "stable")
         }
         release {
+            if (hasKeystore) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 
@@ -87,41 +89,20 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
-
     testOptions { unitTests.isReturnDefaultValues = true }
-
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
 dependencies {
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
 
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.ui.tooling.preview)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons)
-    debugImplementation(libs.compose.ui.tooling)
+    implementation(platform("com.google.firebase:firebase-bom:33.1.2"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
 
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth)
-    implementation(libs.coroutines.play)
+    // Start.io — فقط في نكهة ads. راجع وثائق Start.io: com.startapp:inapp-sdk:5.+
+    "adsImplementation"("com.startapp:inapp-sdk:5.+")
 
-    implementation(libs.coil.compose)
-    implementation(libs.media3.exoplayer)
-    implementation(libs.media3.ui)
-
-    // SDK الأصلي لـ Start.io (Android). لا يعمل في الويب.
-    implementation(libs.startio)
-
-    testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation("junit:junit:4.13.2")
 }

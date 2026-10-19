@@ -1,34 +1,18 @@
-# Android / Gradle
 *.iml
 .gradle/
 build/
 local.properties
 .idea/
+.DS_Store
 captures/
 .externalNativeBuild/
 .cxx/
-*.apk
-*.aab
-
-# أسرار — لا تُرفع أبدًا
-google-services.json
+# أسرار — لا ترفعها أبداً
+# (google-services.json مضمّن عمداً لأن المستودع خاص؛ اجعل المستودع Private)
 *.jks
 *.keystore
 keystore.properties
-serviceAccount*.json
-*-adminsdk-*.json
-.env
-.env.*
-functions/.env*
-functions/.runtimeconfig.json
+secrets.properties
 
-# Node
-node_modules/
-functions/node_modules/
-tests/node_modules/
-firebase-debug.log
-ui-debug.log
-.firebase/
-
-# قالب غير سري
-!functions/.env.example
+# مفتاح الاختبار الثابت (للتحديث فوق القديم) — مقصود رفعه
+!app/ghostthief-debug.jks

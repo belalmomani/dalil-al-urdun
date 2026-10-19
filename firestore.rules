@@ -1,140 +1,18 @@
 rules_version = '2';
-
-// قواعد Cloud Firestore — «دليل الأردن».
-// المبدأ: الزوار يقرؤون المنشور فقط. كل كتابة تتطلب custom claim يضبطه الخادم (Cloud Functions / Admin SDK).
-// لا تعتمد هذه القواعد على أي حقل يستطيع المستخدم كتابته (مثل users/{uid}.role).
-
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // ---------- دوال مساعدة ----------
-    function signedIn() { return request.auth != null; }
-    function verified() { return signedIn() && request.auth.token.email_verified == true; }
-    function isAdmin()  { return verified() && request.auth.token.admin == true; }
-    function isEditor() { return verified() && request.auth.token.editor == true; }
-    function isStaff()  { return isAdmin() || isEditor(); }
-
-    function str(v, max) { return v is string && v.size() > 0 && v.size() <= max; }
-    function optStr(d, k, max) { return !(k in d) || d[k] == null || (d[k] is string && d[k].size() <= max); }
-    function validStatus(s) { return s in ['draft', 'review', 'published', 'archived']; }
-    function validCategory(c) { return c in ['tourism','restaurants','government','shopping','education','news','jobs','apps','services']; }
-    function validRegionType(t) { return t in ['governorate','city','town','village','neighborhood']; }
-
-    function validPlace(d) {
-      return str(d.name, 200)
-        && validCategory(d.category)
-        && validStatus(d.status)
-        && optStr(d, 'description', 5000)
-        && optStr(d, 'phone', 40)
-        && optStr(d, 'address', 300)
-        && optStr(d, 'website', 300)
-        && (!('priceLevel' in d) || d.priceLevel == null || d.priceLevel in [1, 2, 3])
-        && (!('features' in d) || (d.features is list && d.features.size() <= 20))
-        && (!('ageGroups' in d) || (d.ageGroups is list && d.ageGroups.size() <= 10));
-    }
-
-    // المحرر: لا ينشر ولا يحذف ولا يعدّل محتوى منشورًا؛ يعمل على المسودات/المراجعة فقط.
-    function editorMayWritePlace() {
-      return isEditor()
-        && request.resource.data.status in ['draft', 'review']
-        && (resource == null || resource.data.status in ['draft', 'review']);
-    }
-
-    // ---------- الأماكن ----------
-    match /places/{placeId} {
-      allow read: if resource.data.status == 'published' || isStaff();
-      allow create, update: if validPlace(request.resource.data) && (isAdmin() || editorMayWritePlace());
-      allow delete: if isAdmin();
-
-      match /media/{mediaId} {
-        // المحرر يضيف/يعدّل وسائط الأماكن غير المنشورة فقط؛ وسائط المنشور للمدير.
-        function mayWriteMedia() {
-          return isAdmin() || (isEditor()
-            && get(/databases/$(database)/documents/places/$(placeId)).data.status in ['draft', 'review']);
-        }
-        allow read: if isStaff() || get(/databases/$(database)/documents/places/$(placeId)).data.status == 'published';
-        allow create, update: if mayWriteMedia()
-          && request.resource.data.type in ['image', 'video']
-          && str(request.resource.data.url, 1000)
-          && str(request.resource.data.storagePath, 300)
-          && request.resource.data.storagePath.matches('places/' + placeId + '/(images|videos)/.*');
-        allow delete: if mayWriteMedia();
-      }
-    }
-
-    // استعلامات collectionGroup('media') للإحصائيات: للطاقم فقط.
-    match /{path=**}/media/{mediaId} {
-      allow read: if isStaff();
-    }
-
-    // ---------- المناطق ----------
-    match /regions/{regionId} {
-      allow read: if resource.data.status == 'published' || isStaff();
-      allow create, update: if isAdmin()
-        && str(request.resource.data.name, 120)
-        && validRegionType(request.resource.data.type)
-        && validStatus(request.resource.data.status);
-      allow delete: if isAdmin();
-    }
-
-    // ---------- الإعدادات ----------
-    // settings/public: علني (مثل adsEnabled). لا أسرار هنا أبدًا. settings/private: للمدير فقط.
-    match /settings/public {
-      allow read: if true;
-      allow write: if isAdmin();
-    }
-    match /settings/{other} {
-      allow read, write: if isAdmin() && other != 'public';
-    }
-
-    // ---------- مصادر البيانات ----------
-    match /sources/{id} {
-      allow read: if isStaff();
-      allow write: if isAdmin();
-    }
-
-    // ---------- المستخدمون: المفضلة فقط. لا يوجد أي حقل دور يمكن للمستخدم كتابته. ----------
+    // كل مستخدم يقرأ ويكتب وثيقته فقط، مع التحقق من شكل البيانات
     match /users/{uid} {
-      allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
-      allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['favorites', 'updatedAt'])
-        && request.resource.data.favorites is list
-        && request.resource.data.favorites.size() <= 500;
-      allow delete: if signedIn() && request.auth.uid == uid;
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['captures','circleCaptures','points','achievements','resetEpoch','updatedAt'])
+        && request.resource.data.captures is int && request.resource.data.captures >= 0 && request.resource.data.captures < 10000000
+        && request.resource.data.circleCaptures is int && request.resource.data.circleCaptures >= 0
+        && request.resource.data.points is int && request.resource.data.points >= 0 && request.resource.data.points < 1000000000
+        && request.resource.data.resetEpoch is int && request.resource.data.resetEpoch >= 0
+        && request.resource.data.achievements is list && request.resource.data.achievements.size() <= 20;
+      allow delete: if false;
     }
-
-    // ---------- بلاغات واقتراحات: أي مستخدم مسجّل ينشئ، والطاقم فقط يراجع ----------
-    match /reports/{id} {
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['placeId','reason','details','reporterUid','status','createdAt'])
-        && request.resource.data.reporterUid == request.auth.uid
-        && request.resource.data.status == 'open'
-        && str(request.resource.data.reason, 80)
-        && request.resource.data.details is string && request.resource.data.details.size() <= 1000;
-      allow read: if isStaff();
-      allow update: if isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
-      allow delete: if isAdmin();
-    }
-    match /suggestions/{id} {
-      allow create: if signedIn()
-        && request.resource.data.keys().hasOnly(['name','category','regionName','details','suggestedByUid','status','createdAt'])
-        && request.resource.data.suggestedByUid == request.auth.uid
-        && request.resource.data.status == 'pending'
-        && str(request.resource.data.name, 120)
-        && request.resource.data.details is string && request.resource.data.details.size() <= 1000;
-      allow read: if isStaff();
-      allow update: if isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
-      allow delete: if isAdmin();
-    }
-
-    // ---------- سجل التدقيق: إنشاء فقط، لا تعديل ولا حذف ----------
-    match /audit/{id} {
-      allow read: if isAdmin();
-      allow create: if isStaff() && request.resource.data.actorUid == request.auth.uid;
-      allow update, delete: if false;
-    }
-
-    // أي مسار آخر: مرفوض.
     match /{document=**} { allow read, write: if false; }
   }
 }
