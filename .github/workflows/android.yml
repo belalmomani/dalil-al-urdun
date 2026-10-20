@@ -52,6 +52,13 @@ jobs:
             echo "KEYSTORE_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
             echo "KEY_ALIAS=dalil" >> "$GITHUB_ENV"
             echo "KEY_PASSWORD=$KS_PASS" >> "$GITHUB_ENV"
+            # فحص مبكر: يطابق الملف كلمة السر؟ (لا تُطبع كلمة السر)
+            if keytool -list -keystore "$RUNNER_TEMP/dalil.keystore" -alias dalil -storepass "$KS_PASS" >/dev/null 2>&1; then
+              echo "مفتاح التوقيع سليم وكلمة السر صحيحة."
+            else
+              echo "::error::KEYSTORE_PASSWORD لا يطابق ملف KEYSTORE_BASE64 (أو الـ alias ليس dalil). أعد إدخال السرّين معًا من المصدر نفسه."
+              exit 1
+            fi
           else
             echo "::warning::لا يوجد KEYSTORE_BASE64: توقيع عشوائي في كل بناء، ولن يُثبَّت APK فوق السابق. أضف السرين KEYSTORE_BASE64 و KEYSTORE_PASSWORD."
           fi
