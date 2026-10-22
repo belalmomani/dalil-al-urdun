@@ -3,6 +3,7 @@ package jo.guide.app.auth
 import jo.guide.app.i18n.tr
 import android.content.Context
 import com.google.firebase.FirebaseNetworkException
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import com.google.firebase.auth.FirebaseUser
@@ -116,6 +117,29 @@ class AuthManager(context: Context) {
         val u = auth.currentUser ?: return@launchOp
         u.reload().await()
         refresh(auth.currentUser, force = true)
+    }
+
+    /**
+     * حذف الحساب: 1) إعادة التحقق بكلمة المرور (يشترطها Firebase للعمليات الحساسة)
+     * 2) حذف بيانات المستخدم من الخادم (المفضلة والبلاغات والاقتراحات) 3) حذف حساب Firebase.
+     */
+    fun deleteAccount(password: String, onDone: (Boolean) -> Unit) {
+        if (!configured) return
+        scope.launch {
+            _state.value = _state.value.copy(busy = true, message = null, messageOk = false)
+            try {
+                val u = auth.currentUser ?: throw IllegalStateException(tr("لا يوجد مستخدم مسجّل.", "No signed-in user."))
+                val mail = u.email ?: throw IllegalStateException(tr("حساب بلا بريد.", "Account has no email."))
+                u.reauthenticate(EmailAuthProvider.getCredential(mail, password)).await()
+                if (SupabaseApi.configured) SupabaseApi.api("delete_my_data")
+                u.delete().await()
+                _state.value = AuthState(configured = true, message = tr("تم حذف حسابك وبياناتك.", "Your account and data were deleted."), messageOk = true)
+                onDone(true)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(busy = false, message = friendlyError(e))
+                onDone(false)
+            }
+        }
     }
 
     fun signOut() {

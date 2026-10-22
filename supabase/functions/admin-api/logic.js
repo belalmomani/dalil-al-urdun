@@ -31,7 +31,7 @@ export function roleFor({ email, emailVerified, adminEmail, staffRole }) {
 }
 
 export const ACTIONS = {
-  whoami: 'signed_in',
+  whoami: 'signed_in', delete_my_data: 'signed_in',
   load_favorites: 'verified', save_favorites: 'verified', submit_report: 'verified', submit_suggestion: 'verified',
   stats: 'staff', list_regions: 'staff', list_places: 'staff', list_media: 'staff', upsert_place: 'staff',
   create_upload: 'staff', add_media: 'staff', update_media: 'staff', set_cover: 'staff', reorder_media: 'staff',

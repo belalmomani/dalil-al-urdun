@@ -49,6 +49,7 @@ fun AccountScreen(vm: AppViewModel, onAdmin: () -> Unit, onPrivacy: () -> Unit) 
     var pass by remember { mutableStateOf("") }
     var showPass by remember { mutableStateOf(false) }
     var showSuggest by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(JG.Surface).verticalScroll(rememberScrollState())) {
         Box(Modifier.fillMaxWidth().background(JG.NavyDark).statusBarsPadding().padding(16.dp)) { Text(tr("حسابي", "Account"), color = Color.White, style = MaterialTheme.typography.titleLarge) }
@@ -105,6 +106,7 @@ fun AccountScreen(vm: AppViewModel, onAdmin: () -> Unit, onPrivacy: () -> Unit) 
                                 runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BuildConfig.ADMIN_PANEL_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                             }
                         BigButton(tr("تسجيل الخروج", "Sign out"), Icons.Filled.Logout, Modifier.fillMaxWidth(), outlined = true) { vm.auth.signOut() }
+                        TextButton({ showDelete = true }, Modifier.fillMaxWidth()) { Icon(Icons.Filled.DeleteForever, null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(8.dp)); Text(tr("حذف حسابي وبياناتي", "Delete my account and data"), color = MaterialTheme.colorScheme.error) }
                     }
                 }
                 if (auth.emailVerified && auth.status == AccessStatus.USER) OwnerSetup(vm, busy = auth.busy)
@@ -115,6 +117,7 @@ fun AccountScreen(vm: AppViewModel, onAdmin: () -> Unit, onPrivacy: () -> Unit) 
         }
     }
     if (showSuggest) SuggestDialog(vm) { showSuggest = false }
+    if (showDelete) DeleteAccountDialog(vm) { showDelete = false }
 }
 
 /**
@@ -229,4 +232,24 @@ private fun SettingsSection(vm: AppViewModel, onPrivacy: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun DeleteAccountDialog(vm: AppViewModel, onClose: () -> Unit) {
+    val auth by vm.auth.state.collectAsState()
+    var pass by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { if (!auth.busy) onClose() },
+        title = { Text(tr("حذف الحساب نهائيًا", "Delete account permanently")) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(tr("سيُحذف حسابك ومفضلتك وبلاغاتك واقتراحاتك ولا يمكن التراجع. أدخل كلمة المرور للتأكيد.", "Your account, favorites, reports and suggestions will be deleted and this cannot be undone. Enter your password to confirm."))
+                OutlinedTextField(pass, { pass = it }, Modifier.fillMaxWidth(), label = { Text(tr("كلمة المرور", "Password")) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password))
+                auth.message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (auth.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { TextButton(enabled = pass.isNotBlank() && !auth.busy, onClick = { vm.auth.deleteAccount(pass) { ok -> if (ok) onClose() } }) { Text(tr("حذف نهائيًا", "Delete permanently"), color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClose, enabled = !auth.busy) { Text(tr("إلغاء", "Cancel")) } },
+    )
 }

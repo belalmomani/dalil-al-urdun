@@ -100,6 +100,14 @@ const H: Record<string, Handler> = {
     must(await sb.from("favorites").upsert({ uid: ctx.uid, place_ids: ids, updated_at: new Date().toISOString() }));
     return { ok: true };
   },
+  // حذف كل ما يرتبط بحساب المستخدم قبل حذف حساب Firebase من التطبيق
+  async delete_my_data(ctx) {
+    must(await sb.from("favorites").delete().eq("uid", ctx.uid));
+    must(await sb.from("reports").delete().eq("reporter_uid", ctx.uid));
+    must(await sb.from("suggestions").delete().eq("suggested_by_uid", ctx.uid));
+    await audit(ctx, "account_data_deleted", `users/${ctx.uid}`);
+    return { ok: true };
+  },
   async submit_report(ctx, b) {
     const { errors, row } = L.sanitizeReport(b);
     if (errors.length) throw bad(errors[0]);

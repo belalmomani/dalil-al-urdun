@@ -155,3 +155,8 @@ test('البلاغ: السبب مطلوب والاقتراح: الاسم مطل�
   assert.ok(L.sanitizeSuggestion({ name: ' ' }).errors.length);
   assert.equal(L.sanitizeSuggestion({ name: 'مطعم', category: 'restaurants' }).row.category, 'restaurants');
 });
+
+test('delete_my_data: لأي مستخدم مسجّل (حتى غير المؤكَّد) ولا يصل إليه الزائر', () => {
+  assert.equal(L.authorize('delete_my_data', { signedIn: true, emailVerified: false, role: null }).ok, true);
+  assert.equal(L.authorize('delete_my_data', { signedIn: false }).ok, false);
+});
