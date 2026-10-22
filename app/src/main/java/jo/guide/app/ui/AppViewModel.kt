@@ -1,5 +1,6 @@
 package jo.guide.app.ui
 
+import jo.guide.app.i18n.tr
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -75,7 +76,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     fromCache = page.fromCache, isSample = repo.isSample,
                 )
             } catch (e: Exception) {
-                _catalog.update { it.copy(loading = false, error = "تعذّر تحميل البيانات. تحقق من الاتصال ثم أعد المحاولة.") }
+                _catalog.update { it.copy(loading = false, error = tr("تعذّر تحميل البيانات. تحقق من الاتصال ثم أعد المحاولة.", "Could not load data. Check your connection and try again.")) }
             }
         }
     }
@@ -90,7 +91,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 cursor = page.next
                 _catalog.update { it.copy(places = it.places + page.places, loadingMore = false, hasMore = page.next != null) }
             } catch (_: Exception) {
-                _catalog.update { it.copy(loadingMore = false, error = "تعذّر تحميل المزيد.") }
+                _catalog.update { it.copy(loadingMore = false, error = tr("تعذّر تحميل المزيد.", "Could not load more.")) }
             }
         }
     }

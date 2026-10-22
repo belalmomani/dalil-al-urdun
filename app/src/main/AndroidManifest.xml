@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- إشعارات اختيارية (تُطلب بإذن صريح من المستخدم على أندرويد 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- مطلوب من Start.io على API 31+ (معرّف الإعلانات). يمكن إزالته إذا عُطّلت الإعلانات نهائيًا. -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
 

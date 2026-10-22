@@ -27,6 +27,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import jo.guide.app.BuildConfig
+import jo.guide.app.i18n.Lang
+import jo.guide.app.i18n.tr
 import jo.guide.app.ads.AdPolicy
 import jo.guide.app.ads.AdSlot
 import jo.guide.app.data.Category
@@ -36,11 +38,11 @@ import jo.guide.app.ui.components.*
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
-private val tabs = listOf(
-    Tab("home", "الرئيسية", Icons.Filled.Home),
-    Tab("explore", "استكشف", Icons.Filled.Explore),
-    Tab("favorites", "المفضلة", Icons.Filled.Favorite),
-    Tab("account", "حسابي", Icons.Filled.Person),
+private fun tabs() = listOf(
+    Tab("home", tr("الرئيسية", "Home"), Icons.Filled.Home),
+    Tab("explore", tr("استكشف", "Explore"), Icons.Filled.Explore),
+    Tab("favorites", tr("المفضلة", "Favorites"), Icons.Filled.Favorite),
+    Tab("account", tr("حسابي", "Account"), Icons.Filled.Person),
 )
 
 /**
@@ -55,13 +57,13 @@ fun AppRoot(vm: AppViewModel) {
     val online by vm.network.online.collectAsState()
     val remote by vm.adsRemoteEnabled.collectAsState()
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    val showBar = route in tabs.map { it.route }
+    val showBar = route in tabs().map { it.route }
     val decision = AdPolicy.decide(
         appIdConfigured = BuildConfig.ADS_CONFIGURED, remoteEnabled = remote, online = online,
-        keyboardOpen = imeVisible, sensitiveScreen = route == "account" || route == "admin",
+        keyboardOpen = imeVisible, sensitiveScreen = route == "account" || route == "admin" || route == "privacy",
     )
 
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+    CompositionLocalProvider(LocalLayoutDirection provides if (Lang.isAr) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         JordanGuideTheme {
             Column(Modifier.fillMaxSize().background(JG.NavyDark).imePadding()) {
                 Box(Modifier.weight(1f).fillMaxWidth().then(if (!showBar && !decision.show) Modifier.navigationBarsPadding() else Modifier)) {
@@ -74,7 +76,8 @@ fun AppRoot(vm: AppViewModel) {
                         }
                         composable("explore") { ExploreScreen(vm, { nav.navigate("place/$it") }, { nav.navigate("region/$it") }) }
                         composable("favorites") { FavoritesScreen(vm) { nav.navigate("place/$it") } }
-                        composable("account") { AccountScreen(vm) { nav.navigate("admin") } }
+                        composable("account") { AccountScreen(vm, onAdmin = { nav.navigate("admin") }, onPrivacy = { nav.navigate("privacy") }) }
+                        composable("privacy") { PrivacyScreen { nav.popBackStack() } }
                         composable("admin") { AdminScreen(vm) { nav.popBackStack() } }
                         composable("place/{id}", listOf(navArgument("id") { type = NavType.StringType })) { e ->
                             PlaceScreen(vm, e.arguments?.getString("id").orEmpty()) { nav.popBackStack() }
@@ -105,7 +108,7 @@ private fun BottomBar(current: String?, padForNav: Boolean, onSelect: (String) -
         Modifier.fillMaxWidth().background(JG.NavyDark).then(if (padForNav) Modifier.navigationBarsPadding() else Modifier).padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-        tabs.forEach { t ->
+        tabs().forEach { t ->
             val sel = current == t.route
             Column(
                 Modifier.weight(1f).heightIn(min = 56.dp).clickable(role = Role.Tab) { onSelect(t.route) }.padding(vertical = 4.dp),

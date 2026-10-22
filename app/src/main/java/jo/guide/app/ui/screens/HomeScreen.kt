@@ -1,5 +1,6 @@
 package jo.guide.app.ui.screens
 
+import jo.guide.app.i18n.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,8 +46,8 @@ fun HomeScreen(vm: AppViewModel, onSearch: (String) -> Unit, onCategory: (Catego
                 FlagLogo(64.dp)
                 Spacer(Modifier.width(14.dp))
                 Column {
-                    Text("دليل الأردن", color = Color.White, style = MaterialTheme.typography.headlineMedium)
-                    Text("كل الأردن بين إيديك", color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.bodyLarge)
+                    Text(tr("دليل الأردن", "Jordan Guide"), color = Color.White, style = MaterialTheme.typography.headlineMedium)
+                    Text(tr("كل الأردن بين إيديك", "All of Jordan at your fingertips"), color = Color.White.copy(alpha = .85f), style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }
@@ -54,8 +55,8 @@ fun HomeScreen(vm: AppViewModel, onSearch: (String) -> Unit, onCategory: (Catego
             OutlinedTextField(
                 value = query, onValueChange = { query = it },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                placeholder = { Text("ابحث عن مطعم أو موقع أو خدمة...") },
-                leadingIcon = { Icon(Icons.Filled.Search, "بحث") },
+                placeholder = { Text(tr("ابحث عن مطعم أو موقع أو خدمة...", "Search for a restaurant, place or service...")) },
+                leadingIcon = { Icon(Icons.Filled.Search, tr("بحث", "Search")) },
                 singleLine = true, shape = RoundedCornerShape(32.dp),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearch(query) }),
@@ -67,7 +68,7 @@ fun HomeScreen(vm: AppViewModel, onSearch: (String) -> Unit, onCategory: (Catego
         }
         if (catalog.isSample) item {
             InfoBanner(
-                "بيانات تجريبية: لم يُربط التطبيق بقاعدة البيانات بعد. الأسماء عامة وغير موثّقة، ولا تتضمن أرقام هواتف أو أسعارًا.",
+                tr("بيانات تجريبية: لم يُربط التطبيق بقاعدة البيانات بعد. الأسماء عامة وغير موثّقة، ولا تتضمن أرقام هواتف أو أسعارًا.", "Sample data: the app is not connected to the database yet. Names are generic and unverified, with no phone numbers or prices."),
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
         }
@@ -79,7 +80,7 @@ fun HomeScreen(vm: AppViewModel, onSearch: (String) -> Unit, onCategory: (Catego
         item {
             CategoryCard(Category.SERVICES.label, categoryIcon(Category.SERVICES.id), Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { onCategory(Category.SERVICES) }
         }
-        item { SectionTitle("اكتشف الأردن", Icons.Filled.Terrain, onDark = true) }
+        item { SectionTitle(tr("اكتشف الأردن", "Discover Jordan"), Icons.Filled.Terrain, onDark = true) }
         item {
             Surface(
                 onClick = { onCategory(Category.TOURISM) },
@@ -88,25 +89,25 @@ fun HomeScreen(vm: AppViewModel, onSearch: (String) -> Unit, onCategory: (Catego
             ) {
                 Box(Modifier.background(Brush.horizontalGradient(listOf(JG.NavyCard, JG.Red.copy(alpha = .55f))))) {
                     Column(Modifier.align(Alignment.CenterStart).padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("وجهات تستحق الزيارة", color = Color.White, style = MaterialTheme.typography.titleLarge)
-                        Text("أجمل الأماكن السياحية في الأردن", color = Color.White.copy(alpha = .9f))
+                        Text(tr("وجهات تستحق الزيارة", "Destinations worth visiting"), color = Color.White, style = MaterialTheme.typography.titleLarge)
+                        Text(tr("أجمل الأماكن السياحية في الأردن", "Jordan's most beautiful tourist places"), color = Color.White.copy(alpha = .9f))
                         Spacer(Modifier.height(4.dp))
-                        Button(onClick = { onCategory(Category.TOURISM) }, colors = ButtonDefaults.buttonColors(containerColor = JG.RedDark)) { Text("اكتشف الآن") }
+                        Button(onClick = { onCategory(Category.TOURISM) }, colors = ButtonDefaults.buttonColors(containerColor = JG.RedDark)) { Text(tr("اكتشف الآن", "Explore now")) }
                     }
                 }
             }
         }
         if (featured.isNotEmpty()) {
-            item { SectionTitle("أماكن مميزة", Icons.Filled.Star, onDark = true) }
+            item { SectionTitle(tr("أماكن مميزة", "Featured places"), Icons.Filled.Star, onDark = true) }
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(featured, key = { it.id }) { p ->
                         Surface(onClick = { onPlace(p.id) }, shape = RoundedCornerShape(16.dp), color = Color.White, modifier = Modifier.width(200.dp)) {
                             Column {
-                                PlaceImage(p.coverUrl, p.coverAlt ?: p.name, p.category, Modifier.fillMaxWidth().height(110.dp))
+                                PlaceImage(p.coverUrl, p.coverAlt ?: p.displayName, p.category, Modifier.fillMaxWidth().height(110.dp))
                                 Column(Modifier.padding(10.dp)) {
-                                    Text(p.name, style = MaterialTheme.typography.titleMedium, color = JG.Ink, maxLines = 1)
-                                    Text(p.regionName ?: "", color = JG.Muted, style = MaterialTheme.typography.bodyMedium)
+                                    Text(p.displayName, style = MaterialTheme.typography.titleMedium, color = JG.Ink, maxLines = 1)
+                                    Text(p.displayRegion ?: "", color = JG.Muted, style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
                         }
@@ -119,7 +120,7 @@ fun HomeScreen(vm: AppViewModel, onSearch: (String) -> Unit, onCategory: (Catego
             item {
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     InfoBanner(err, Color(0xFFFFB4AB), icon = Icons.Filled.WifiOff)
-                    BigButton("إعادة المحاولة", Icons.Filled.Refresh, onClick = vm::refresh)
+                    BigButton(tr("إعادة المحاولة", "Retry"), Icons.Filled.Refresh, onClick = vm::refresh)
                 }
             }
         }

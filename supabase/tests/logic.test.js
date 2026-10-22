@@ -133,3 +133,25 @@ test('المناطق والبريد والصفحات', () => {
   assert.match(L.slugId('مقهى', 5), /^place-5$/);
   assert.ok(L.validId(L.slugId('x y z')));
 });
+
+test('الحقول الإنجليزية: تُقصّ وتصبح null إن كانت فارغة', () => {
+  const base = { name: 'البتراء', category: 'tourism', status: 'draft' };
+  const a = L.sanitizePlace({ ...base, nameEn: '  Petra  ', descriptionEn: 'Rock-cut city' }, 'admin');
+  assert.deepEqual(a.errors, []);
+  assert.equal(a.row.name_en, 'Petra');
+  assert.equal(a.row.description_en, 'Rock-cut city');
+  const b = L.sanitizePlace(base, 'admin');
+  assert.equal(b.row.name_en, null);
+  assert.equal(b.row.description_en, null);
+  const c = L.sanitizePlace({ ...base, nameEn: 'x'.repeat(500) }, 'admin');
+  assert.equal(c.row.name_en.length, 200);
+  const r = L.sanitizeRegion({ name: 'عمّان', nameEn: 'Amman', type: 'governorate' });
+  assert.equal(r.row.name_en, 'Amman');
+});
+
+test('البلاغ: السبب مطلوب والاقتراح: الاسم مطلوب', () => {
+  assert.ok(L.sanitizeReport({ reason: '' }).errors.length);
+  assert.equal(L.sanitizeReport({ placeId: 'petra', reason: 'رابط لا يعمل' }).errors.length, 0);
+  assert.ok(L.sanitizeSuggestion({ name: ' ' }).errors.length);
+  assert.equal(L.sanitizeSuggestion({ name: 'مطعم', category: 'restaurants' }).row.category, 'restaurants');
+});

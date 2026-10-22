@@ -68,3 +68,9 @@ cd supabase && node --experimental-strip-types --import ./tests/register.mjs --t
 - مشروع Firebase المشترك مع تطبيقات أخرى يشارك مستخدميه؛ يُفضّل مشروع مخصص.
 - لا يوجد App Check بعد. راقب حدود خطة Supabase (التخزين/النقل).
 - البيانات الأولية في `SeedData.kt` تجريبية وليست حقيقية.
+
+## تحديث 22 أكتوبر 2026: الإنجليزية، الإشعارات، الخصوصية
+1. شغّل في Supabase SQL Editor بالترتيب: `supabase/migrations/20261022000000_english.sql` ثم `supabase/seed/20261022_english.sql` (آمنان للتكرار).
+2. أعد نشر دالة admin-api (workflow: supabase-deploy) لتقبل الحقول الإنجليزية.
+3. أعد نشر Pages (workflow: pages): تصبح سياسة الخصوصية على `<رابط-الصفحة>/privacy.html`.
+4. أعد بناء التطبيق. اللغة: «حسابي ← الإعدادات». الإشعارات اختيارية (أماكن جديدة) وتعمل محليًا بلا خادم إشعارات.

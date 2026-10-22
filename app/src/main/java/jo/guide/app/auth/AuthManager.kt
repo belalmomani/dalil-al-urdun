@@ -1,5 +1,6 @@
 package jo.guide.app.auth
 
+import jo.guide.app.i18n.tr
 import android.content.Context
 import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
@@ -24,6 +25,7 @@ data class AuthState(
     val claims: Map<String, Any?> = emptyMap(),
     val busy: Boolean = false,
     val message: String? = null,
+    val messageOk: Boolean = false,
 ) {
     val signedIn get() = uid != null
     val status: AccessStatus get() = AdminAccess.evaluate(configured, signedIn, emailVerified, claims)
@@ -77,17 +79,17 @@ class AuthManager(context: Context) {
         }
     }
 
-    fun clearMessage() { _state.value = _state.value.copy(message = null) }
+    fun clearMessage() { _state.value = _state.value.copy(message = null, messageOk = false) }
 
     private fun launchOp(okMessage: String? = null, block: suspend () -> Unit) {
-        if (!configured) { _state.value = _state.value.copy(message = NOT_CONFIGURED); return }
+        if (!configured) { _state.value = _state.value.copy(message = notConfigured()); return }
         scope.launch {
-            _state.value = _state.value.copy(busy = true, message = null)
+            _state.value = _state.value.copy(busy = true, message = null, messageOk = false)
             try {
                 block()
-                _state.value = _state.value.copy(busy = false, message = okMessage)
+                _state.value = _state.value.copy(busy = false, message = okMessage, messageOk = okMessage != null)
             } catch (e: Exception) {
-                _state.value = _state.value.copy(busy = false, message = arabicError(e))
+                _state.value = _state.value.copy(busy = false, message = friendlyError(e))
             }
         }
     }
@@ -96,16 +98,16 @@ class AuthManager(context: Context) {
         auth.signInWithEmailAndPassword(email.trim(), password).await()
     }
 
-    fun register(email: String, password: String) = launchOp("تم إنشاء الحساب. أرسلنا رسالة تأكيد إلى بريدك.") {
+    fun register(email: String, password: String) = launchOp(tr("تم إنشاء الحساب. أرسلنا رسالة تأكيد إلى بريدك.", "Account created. We sent a verification email.")) {
         val r = auth.createUserWithEmailAndPassword(email.trim(), password).await()
         r.user?.sendEmailVerification()?.await()
     }
 
-    fun resetPassword(email: String) = launchOp("إن كان البريد مسجلًا فقد أرسلنا رابط استعادة كلمة المرور.") {
+    fun resetPassword(email: String) = launchOp(tr("إن كان البريد مسجلًا فقد أرسلنا رابط استعادة كلمة المرور.", "If the email is registered, we sent a password reset link.")) {
         auth.sendPasswordResetEmail(email.trim()).await()
     }
 
-    fun resendVerification() = launchOp("أُرسلت رسالة التأكيد من جديد.") {
+    fun resendVerification() = launchOp(tr("أُرسلت رسالة التأكيد من جديد.", "Verification email sent again.")) {
         auth.currentUser?.sendEmailVerification()?.await()
     }
 
@@ -121,27 +123,27 @@ class AuthManager(context: Context) {
     }
 
     /** إعادة فحص الصلاحية من الخادم (بعد تأكيد البريد أو بعد أن يمنحك المالك دورًا). */
-    fun recheckAccess() = launchOp("تم تحديث حالة الصلاحية.") {
+    fun recheckAccess() = launchOp(tr("تم تحديث حالة الصلاحية.", "Access status updated.")) {
         val u = auth.currentUser ?: return@launchOp
         u.reload().await()
         refresh(auth.currentUser, force = true)
     }
 
-    private fun arabicError(e: Exception): String = when (e) {
-        is FirebaseNetworkException -> "لا يوجد اتصال بالإنترنت."
+    private fun friendlyError(e: Exception): String = when (e) {
+        is FirebaseNetworkException -> tr("لا يوجد اتصال بالإنترنت.", "No internet connection.")
         is FirebaseAuthException -> when (e.errorCode) {
-            "ERROR_INVALID_EMAIL" -> "صيغة البريد الإلكتروني غير صحيحة."
-            "ERROR_WRONG_PASSWORD", "ERROR_INVALID_CREDENTIAL", "ERROR_USER_NOT_FOUND" -> "البريد أو كلمة المرور غير صحيحة."
-            "ERROR_EMAIL_ALREADY_IN_USE" -> "هذا البريد مسجّل مسبقًا."
-            "ERROR_WEAK_PASSWORD" -> "كلمة المرور ضعيفة (٦ أحرف على الأقل)."
-            "ERROR_TOO_MANY_REQUESTS" -> "محاولات كثيرة. حاول لاحقًا."
-            "ERROR_USER_DISABLED" -> "هذا الحساب معطّل."
-            else -> "تعذّرت العملية (${e.errorCode})."
+            "ERROR_INVALID_EMAIL" -> tr("صيغة البريد الإلكتروني غير صحيحة.", "Invalid email format.")
+            "ERROR_WRONG_PASSWORD", "ERROR_INVALID_CREDENTIAL", "ERROR_USER_NOT_FOUND" -> tr("البريد أو كلمة المرور غير صحيحة.", "Incorrect email or password.")
+            "ERROR_EMAIL_ALREADY_IN_USE" -> tr("هذا البريد مسجّل مسبقًا.", "This email is already registered.")
+            "ERROR_WEAK_PASSWORD" -> tr("كلمة المرور ضعيفة (٦ أحرف على الأقل).", "Weak password (at least 6 characters).")
+            "ERROR_TOO_MANY_REQUESTS" -> tr("محاولات كثيرة. حاول لاحقًا.", "Too many attempts. Try again later.")
+            "ERROR_USER_DISABLED" -> tr("هذا الحساب معطّل.", "This account is disabled.")
+            else -> tr("تعذّرت العملية (${e.errorCode}).", "Operation failed (${e.errorCode}).")
         }
-        else -> e.message?.takeIf { it.isNotBlank() } ?: "حدث خطأ غير متوقع."
+        else -> e.message?.takeIf { it.isNotBlank() } ?: tr("حدث خطأ غير متوقع.", "An unexpected error occurred.")
     }
 
     companion object {
-        const val NOT_CONFIGURED = "لم يُربط التطبيق بمشروع Firebase بعد. راجع README لإضافة google-services.json."
+        fun notConfigured() = tr("لم يُربط التطبيق بمشروع Firebase بعد. راجع README لإضافة google-services.json.", "The app is not connected to a Firebase project yet. See the README to add google-services.json.")
     }
 }

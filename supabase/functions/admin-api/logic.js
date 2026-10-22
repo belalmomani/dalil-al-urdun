@@ -105,6 +105,7 @@ export function sanitizePlace(f, role) {
   const row = {
     name, category: f.category, status: f.status, region_id: regionId,
     description: String(f.description ?? '').trim().slice(0, 5000),
+    name_en: s(f.nameEn, 200), description_en: s(f.descriptionEn, 5000),
     phone, address: s(f.address, 300), lat, lng, website,
     price_level: price, price_note: s(f.priceNote, 200), opening_hours: s(f.openingHours, 300),
     kids_friendly: kids,
@@ -126,7 +127,7 @@ export function sanitizeRegion(f) {
   if (!REGION_STATUSES.includes(status)) errors.push('حالة المنطقة غير صالحة.');
   const parent = f.parentId ? String(f.parentId) : null;
   if (parent && !validId(parent)) errors.push('معرّف المنطقة الأم غير صالح.');
-  return { errors, row: { name, type: f.type, parent_id: parent, status } };
+  return { errors, row: { name, name_en: s(f.nameEn, 120), type: f.type, parent_id: parent, status } };
 }
 
 export function validateUpload({ kind, contentType, size }) {

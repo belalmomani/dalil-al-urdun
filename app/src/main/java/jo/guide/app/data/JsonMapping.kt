@@ -19,7 +19,7 @@ internal fun parseTime(s: String?): Long? =
 fun regionFromJson(o: JSONObject): Region? {
     val id = o.str("id") ?: return null
     val name = o.str("name") ?: return null
-    return Region(id, name, RegionType.fromId(o.str("type")), o.str("parent_id"))
+    return Region(id, name, RegionType.fromId(o.str("type")), o.str("parent_id"), o.str("name_en"))
 }
 
 fun placeFromJson(o: JSONObject): Place? {
@@ -32,6 +32,9 @@ fun placeFromJson(o: JSONObject): Place? {
         regionId = o.str("region_id"),
         regionName = o.str("region_name"),
         description = o.str("description") ?: "",
+        nameEn = o.str("name_en"),
+        descriptionEn = o.str("description_en"),
+        regionNameEn = o.str("region_name_en"),
         phone = o.str("phone"),
         address = o.str("address"),
         lat = o.dbl("lat"),

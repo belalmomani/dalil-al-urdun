@@ -119,6 +119,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    implementation(libs.work.runtime)
 
     // SDK الأصلي لـ Start.io (Android). لا يعمل في الويب.
     implementation(libs.startio)

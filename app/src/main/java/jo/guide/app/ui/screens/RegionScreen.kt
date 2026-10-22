@@ -1,5 +1,6 @@
 package jo.guide.app.ui.screens
 
+import jo.guide.app.i18n.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,8 +31,8 @@ fun RegionScreen(vm: AppViewModel, regionId: String, onBack: () -> Unit, onPlace
         containerColor = JG.Surface,
         topBar = {
             TopAppBar(
-                title = { Text(region?.let { "${it.type.label} ${it.name}" } ?: "المنطقة") },
-                navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "رجوع") } },
+                title = { Text(region?.let { "${it.type.label} ${it.displayName}" } ?: tr("المنطقة", "Region")) },
+                navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, tr("رجوع", "Back")) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = JG.NavyDark, titleContentColor = Color.White, navigationIconContentColor = Color.White),
             )
         },
@@ -39,12 +40,12 @@ fun RegionScreen(vm: AppViewModel, regionId: String, onBack: () -> Unit, onPlace
         LazyColumn(Modifier.padding(pad).fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (children.isNotEmpty()) item {
                 Column {
-                    Text("المناطق التابعة", style = MaterialTheme.typography.titleMedium)
+                    Text(tr("المناطق التابعة", "Sub-regions"), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { children.forEach { c -> AssistChip({ onRegion(c.id) }, { Text(c.name) }) } }
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { children.forEach { c -> AssistChip({ onRegion(c.id) }, { Text(c.displayName) }) } }
                 }
             }
-            if (places.isEmpty()) item { EmptyState("لا توجد أماكن منشورة بعد", "لم تُضف أماكن موثّقة لهذه المنطقة. يمكنك اقتراح مكان من صفحة الحساب.") }
+            if (places.isEmpty()) item { EmptyState(tr("لا توجد أماكن منشورة بعد", "No published places yet"), tr("لم تُضف أماكن موثّقة لهذه المنطقة. يمكنك اقتراح مكان من صفحة الحساب.", "No verified places have been added for this region. You can suggest one from the Account page.")) }
             items(places, key = { it.id }) { p -> PlaceCard(p, p.id in favorites, { vm.toggleFavorite(p.id) }, { onPlace(p.id) }) }
         }
     }

@@ -1,5 +1,6 @@
 package jo.guide.app.data
 
+import jo.guide.app.i18n.tr
 import com.google.firebase.auth.FirebaseAuth
 import jo.guide.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +43,7 @@ object SupabaseApi {
             c.setRequestProperty("Authorization", "Bearer ${BuildConfig.SUPABASE_ANON_KEY}")
             c.setRequestProperty("Accept", "application/json")
             val (code, text) = read(c)
-            if (code !in 200..299) throw ApiException(code, "تعذّر جلب البيانات ($code).")
+            if (code !in 200..299) throw ApiException(code, tr("تعذّر جلب البيانات ($code).", "Could not load data ($code)."))
             JSONArray(text)
         } finally {
             c.disconnect()
@@ -50,7 +51,7 @@ object SupabaseApi {
     }
 
     suspend fun api(action: String, body: JSONObject = JSONObject()): JSONObject {
-        val token = idToken() ?: throw ApiException(401, "سجّل الدخول أولًا.")
+        val token = idToken() ?: throw ApiException(401, tr("سجّل الدخول أولًا.", "Please sign in first."))
         return withContext(Dispatchers.IO) {
             val c = open("$base/functions/v1/admin-api", "POST")
             try {
@@ -65,7 +66,7 @@ object SupabaseApi {
                 val (code, text) = read(c)
                 val json = try { JSONObject(text) } catch (_: Exception) { JSONObject() }
                 if (code !in 200..299) {
-                    val msg = if (json.isNull("error")) "رفض الخادم الطلب ($code)." else json.optString("error")
+                    val msg = if (json.isNull("error")) tr("رفض الخادم الطلب ($code).", "The server rejected the request ($code).") else json.optString("error")
                     throw ApiException(code, msg)
                 }
                 json

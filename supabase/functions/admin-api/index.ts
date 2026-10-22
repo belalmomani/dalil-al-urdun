@@ -155,11 +155,12 @@ const H: Record<string, Handler> = {
     if (!isNew && existing == null) throw new HttpError(404, "المكان غير موجود.");
     if (!L.editorMayTouch(ctx.role, existing, row.status)) throw new HttpError(403, "المحرر يعمل على المسودات وقيد المراجعة فقط.");
     if (row.region_id) {
-      const r = await sb.from("regions").select("name").eq("id", row.region_id).maybeSingle();
+      const r = await sb.from("regions").select("name,name_en").eq("id", row.region_id).maybeSingle();
       must(r);
       if (!r.data) throw bad("المنطقة غير موجودة.");
       row.region_name = r.data.name;
-    } else row.region_name = null;
+      row.region_name_en = r.data.name_en ?? null;
+    } else { row.region_name = null; row.region_name_en = null; }
     const now = new Date().toISOString();
     const payload: any = { ...row, id, updated_at: now };
     if (b.markVerified === true) payload.verified_at = now;

@@ -133,8 +133,8 @@ const VIEWS = {
 
   async regions() {
     const rows = S.regions;
-    const f = h('form', { class: 'card', onsubmit: (e) => { e.preventDefault(); const d = Object.fromEntries(new FormData(e.target)); run(async () => { await api('upsert_region', { name: d.name, type: d.type, parentId: d.parentId || null, status: 'published' }); S.regions = []; }, 'حُفظت المنطقة.'); } },
-      h('h3', {}, 'إضافة منطقة'), field('الاسم', h('input', { name: 'name', required: true })), field('النوع', sel('type', L.REGION_TYPES, 'governorate')),
+    const f = h('form', { class: 'card', onsubmit: (e) => { e.preventDefault(); const d = Object.fromEntries(new FormData(e.target)); run(async () => { await api('upsert_region', { name: d.name, nameEn: d.nameEn || null, type: d.type, parentId: d.parentId || null, status: 'published' }); S.regions = []; }, 'حُفظت المنطقة.'); } },
+      h('h3', {}, 'إضافة منطقة'), field('الاسم', h('input', { name: 'name', required: true })), field('الاسم بالإنجليزية', h('input', { name: 'nameEn', dir: 'ltr' })), field('النوع', sel('type', L.REGION_TYPES, 'governorate')),
       field('تتبع لـ', h('select', { name: 'parentId' }, h('option', { value: '' }, '— بدون —'), rows.map((r) => h('option', { value: r.id }, r.name)))), h('button', { class: 'btn' }, 'حفظ'));
     return [f, h('ul', { class: 'list' }, rows.map((r) => h('li', {}, h('span', {}, `${r.name} (${L.REGION_TYPES[r.type] || r.type})`),
       h('button', { class: 'btn sm danger', onclick: () => confirm(`حذف «${r.name}»؟`) && run(async () => { await api('delete_region', { id: r.id }); S.regions = []; }, 'حُذفت.') }, 'حذف'))))];
@@ -190,10 +190,12 @@ function placeEditor(p) {
   } },
     h('h3', {}, p ? 'تعديل مكان' : 'مكان جديد'), flash(),
     field('الاسم', h('input', { name: 'name', value: v('name'), required: true })),
+    field('الاسم بالإنجليزية (اختياري)', h('input', { name: 'nameEn', value: v('name_en'), dir: 'ltr' })),
     field('التصنيف', sel('category', L.CATEGORIES, p?.category || 'services')),
     field('الحالة', sel('status', Object.fromEntries(Object.entries(L.STATUSES).filter(([k]) => L.allowedStatuses(S.role).includes(k))), p?.status || 'draft')),
     field('المنطقة', h('select', { name: 'regionId' }, h('option', { value: '' }, '— غير محددة —'), S.regions.map((r) => h('option', { value: r.id, selected: r.id === p?.region_id }, r.name)))),
     field('الوصف', h('textarea', { name: 'description', rows: 4 }, v('description'))),
+    field('الوصف بالإنجليزية (اختياري)', h('textarea', { name: 'descriptionEn', rows: 4, dir: 'ltr' }, v('description_en'))),
     field('الهاتف (فقط إن كان موثّقًا)', h('input', { name: 'phone', value: v('phone'), inputmode: 'tel' })),
     field('العنوان', h('input', { name: 'address', value: v('address') })),
     h('div', { class: 'row' }, field('خط العرض', h('input', { name: 'lat', value: v('lat'), inputmode: 'decimal' })), field('خط الطول', h('input', { name: 'lng', value: v('lng'), inputmode: 'decimal' }))),

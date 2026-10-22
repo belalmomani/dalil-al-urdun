@@ -1,5 +1,6 @@
 package jo.guide.app.ui.components
 
+import jo.guide.app.i18n.tr
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -49,7 +50,7 @@ fun categoryIcon(id: String?): ImageVector = when (id) {
 fun FlagLogo(size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
     Box(
         modifier.size(size).clip(RoundedCornerShape(size * 0.22f)).background(Color.White)
-            .semantics { contentDescription = "شعار دليل الأردن" },
+            .semantics { contentDescription = tr("شعار دليل الأردن", "Jordan Guide logo") },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(size * 0.72f).clip(RoundedCornerShape(size * 0.08f))) {
@@ -141,21 +142,21 @@ fun StatusBadge(text: String, color: Color, icon: ImageVector? = null) {
 fun PlaceCard(place: Place, favorite: Boolean, onFavorite: () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = Color.White, shadowElevation = 2.dp) {
         Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PlaceImage(place.coverUrl, place.coverAlt ?: place.name, place.category, Modifier.size(92.dp))
+            PlaceImage(place.coverUrl, place.coverAlt ?: place.displayName, place.category, Modifier.size(92.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(place.name, style = MaterialTheme.typography.titleMedium, color = JG.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(place.displayName, style = MaterialTheme.typography.titleMedium, color = JG.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val cat = Category.fromId(place.category)?.label ?: ""
-                Text(listOfNotNull(cat, place.regionName).joinToString(" · "), color = JG.Muted, style = MaterialTheme.typography.bodyMedium)
+                Text(listOfNotNull(cat, place.displayRegion).joinToString(" · "), color = JG.Muted, style = MaterialTheme.typography.bodyMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (place.isSample) StatusBadge("تجريبي", JG.Amber)
-                    else if (place.verifiedAt == null) StatusBadge("يحتاج توثيقًا", JG.Amber)
-                    if (place.kidsFriendly == true) StatusBadge("للأطفال", JG.Green, Icons.Filled.ChildCare)
+                    if (place.isSample) StatusBadge(tr("تجريبي", "Sample"), JG.Amber)
+                    else if (place.verifiedAt == null) StatusBadge(tr("يحتاج توثيقًا", "Needs verification"), JG.Amber)
+                    if (place.kidsFriendly == true) StatusBadge(tr("للأطفال", "Kids"), JG.Green, Icons.Filled.ChildCare)
                 }
             }
             IconButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
                 Icon(
                     if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    contentDescription = if (favorite) "إزالة من المفضلة" else "إضافة إلى المفضلة",
+                    contentDescription = if (favorite) tr("إزالة من المفضلة", "Remove from favorites") else tr("إضافة إلى المفضلة", "Add to favorites"),
                     tint = JG.Red,
                 )
             }

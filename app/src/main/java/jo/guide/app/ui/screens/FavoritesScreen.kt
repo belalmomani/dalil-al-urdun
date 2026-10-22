@@ -1,5 +1,6 @@
 package jo.guide.app.ui.screens
 
+import jo.guide.app.i18n.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,12 +24,12 @@ fun FavoritesScreen(vm: AppViewModel, onPlace: (String) -> Unit) {
     val auth by vm.auth.state.collectAsState()
     val list = catalog.places.filter { it.id in favorites }
     Column(Modifier.fillMaxSize().background(JG.Surface)) {
-        Box(Modifier.fillMaxWidth().background(JG.NavyDark).statusBarsPadding().padding(16.dp)) { Text("المفضلة", color = Color.White, style = MaterialTheme.typography.titleLarge) }
+        Box(Modifier.fillMaxWidth().background(JG.NavyDark).statusBarsPadding().padding(16.dp)) { Text(tr("المفضلة", "Favorites"), color = Color.White, style = MaterialTheme.typography.titleLarge) }
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                InfoBanner(if (auth.signedIn) "مفضلتك محفوظة على جهازك وتتزامن مع حسابك." else "مفضلتك محفوظة على هذا الجهاز فقط. سجّل الدخول (اختياريًا) لمزامنتها.", JG.Navy, icon = Icons.Filled.Info)
+                InfoBanner(if (auth.signedIn) tr("مفضلتك محفوظة على جهازك وتتزامن مع حسابك.", "Your favorites are saved on your device and synced with your account.") else tr("مفضلتك محفوظة على هذا الجهاز فقط. سجّل الدخول (اختياريًا) لمزامنتها.", "Your favorites are saved on this device only. Sign in (optional) to sync them."), JG.Navy, icon = Icons.Filled.Info)
             }
-            if (list.isEmpty()) item { EmptyState("لا توجد أماكن مفضلة", "اضغط على القلب في أي مكان لإضافته هنا.") }
+            if (list.isEmpty()) item { EmptyState(tr("لا توجد أماكن مفضلة", "No favorite places"), tr("اضغط على القلب في أي مكان لإضافته هنا.", "Tap the heart on any place to add it here.")) }
             items(list, key = { it.id }) { p -> PlaceCard(p, true, { vm.toggleFavorite(p.id) }, { onPlace(p.id) }) }
         }
     }

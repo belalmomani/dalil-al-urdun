@@ -54,6 +54,7 @@ export function validatePlaceForm(f, role) {
     name, category: f.category, status: f.status,
     regionId: f.regionId || null, regionName: f.regionName || null,
     description: (f.description || '').trim(),
+    nameEn: (f.nameEn || '').trim() || null, descriptionEn: (f.descriptionEn || '').trim() || null,
     phone: phone || null, address: (f.address || '').trim() || null,
     lat, lng, website: website || null,
     priceLevel, priceNote: (f.priceNote || '').trim() || null,

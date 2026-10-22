@@ -2,6 +2,7 @@ package jo.guide.app.data
 
 import android.content.Context
 import com.google.firebase.FirebaseApp
+import jo.guide.app.i18n.tr
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -35,9 +36,9 @@ class SeedPlaceRepository : PlaceRepository {
     override suspend fun loadMedia(placeId: String) = emptyList<PlaceMedia>()
     override suspend fun adsRemoteEnabled() = true
     override suspend fun submitReport(placeId: String, reason: String, details: String) =
-        Result.failure<Unit>(IllegalStateException("لم يتم ربط Supabase بعد، لا يمكن إرسال البلاغات."))
+        Result.failure<Unit>(IllegalStateException(tr("لم يتم ربط Supabase بعد، لا يمكن إرسال البلاغات.", "Supabase is not connected yet, so reports cannot be sent.")))
     override suspend fun submitSuggestion(name: String, category: String, regionName: String, details: String) =
-        Result.failure<Unit>(IllegalStateException("لم يتم ربط Supabase بعد، لا يمكن إرسال الاقتراحات."))
+        Result.failure<Unit>(IllegalStateException(tr("لم يتم ربط Supabase بعد، لا يمكن إرسال الاقتراحات.", "Supabase is not connected yet, so suggestions cannot be sent.")))
     override suspend fun saveFavorites(uid: String, ids: Set<String>) = Unit
     override suspend fun loadFavorites(uid: String) = emptySet<String>()
 }
@@ -62,7 +63,7 @@ class SupabasePlaceRepository(private val context: Context) : PlaceRepository {
         }
 
     override suspend fun loadRegions(): List<Region> {
-        val (arr, _) = cachedRest("regions?select=id,name,type,parent_id&status=eq.published&order=name&limit=500", "regions.json")
+        val (arr, _) = cachedRest("regions?select=id,name,name_en,type,parent_id&status=eq.published&order=name&limit=500", "regions.json")
         return (0 until arr.length()).mapNotNull { regionFromJson(arr.getJSONObject(it)) }
     }
 

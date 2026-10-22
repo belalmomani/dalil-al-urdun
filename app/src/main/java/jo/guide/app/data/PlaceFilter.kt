@@ -33,7 +33,7 @@ data class PlaceFilter(
         val q = normalizeArabic(query)
         if (q.isNotEmpty()) {
             val hay = normalizeArabic(
-                listOfNotNull(p.name, p.description, p.regionName, p.address).joinToString(" ")
+                listOfNotNull(p.name, p.nameEn, p.description, p.descriptionEn, p.regionName, p.regionNameEn, p.address).joinToString(" ")
             )
             if (!q.split(' ').filter { it.isNotEmpty() }.all { hay.contains(it) }) return false
         }
