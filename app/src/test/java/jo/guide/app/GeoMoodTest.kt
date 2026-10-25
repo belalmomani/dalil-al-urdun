@@ -13,9 +13,9 @@ class GeoMoodTest {
     private fun p(id: String, name: String, cat: String = "tourism", desc: String = "", lat: Double? = null, lng: Double? = null, kids: Boolean? = null, price: Int? = null) =
         Place(id = id, name = name, category = cat, description = desc, lat = lat, lng = lng, kidsFriendly = kids, priceLevel = price)
 
-    @Test fun distanceAmmanToAqabaAbout330km() {
+    @Test fun distanceAmmanToAqabaAbout280kmStraightLine() {
         val d = Geo.distanceKm(31.95, 35.93, 29.53, 35.01)
-        assertTrue(d in 300.0..340.0)
+        assertTrue(d in 270.0..295.0)
     }
     @Test fun phoneValidation() {
         assertTrue(Geo.validPhone("+962 6 123 4567"))
