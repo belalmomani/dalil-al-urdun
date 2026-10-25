@@ -16,10 +16,14 @@ data class PlaceFilter(
     val ageGroups: Set<String> = emptySet(),
     val features: Set<String> = emptySet(),
     val kidsFriendlyOnly: Boolean = false,
+    /** كلمات مفتاحية (أي واحدة تكفي) يضعها «المزاج» المختار؛ تُطابق على الاسم والوصف والعنوان بالعربية والإنجليزية. */
+    val keywords: Set<String> = emptySet(),
+    /** معرّف المزاج المختار (للعرض كشارة قابلة للإزالة). */
+    val moodId: String? = null,
 ) {
     val activeCount: Int
         get() = categories.size + regionIds.size + priceLevels.size + ageGroups.size +
-            features.size + (if (kidsFriendlyOnly) 1 else 0)
+            features.size + (if (kidsFriendlyOnly) 1 else 0) + (if (moodId != null) 1 else 0)
 
     val isEmpty get() = activeCount == 0 && query.isBlank()
 
@@ -31,11 +35,12 @@ data class PlaceFilter(
         if (features.isNotEmpty() && !p.features.containsAll(features)) return false
         if (kidsFriendlyOnly && p.kidsFriendly != true) return false
         val q = normalizeArabic(query)
-        if (q.isNotEmpty()) {
+        if (q.isNotEmpty() || keywords.isNotEmpty()) {
             val hay = normalizeArabic(
                 listOfNotNull(p.name, p.nameEn, p.description, p.descriptionEn, p.regionName, p.regionNameEn, p.address).joinToString(" ")
             )
-            if (!q.split(' ').filter { it.isNotEmpty() }.all { hay.contains(it) }) return false
+            if (q.isNotEmpty() && !q.split(' ').filter { it.isNotEmpty() }.all { hay.contains(it) }) return false
+            if (keywords.isNotEmpty() && keywords.none { k -> hay.contains(normalizeArabic(k)) }) return false
         }
         return true
     }

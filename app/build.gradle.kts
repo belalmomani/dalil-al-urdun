@@ -120,6 +120,7 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.work.runtime)
+    implementation(libs.osmdroid)
 
     // SDK الأصلي لـ Start.io (Android). لا يعمل في الويب.
     implementation(libs.startio)

@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- الموقع: يُطلب وقت التشغيل فقط عند ضغط «موقعي» في الخريطة، ويُستخدم داخل الجهاز لعرض الأماكن القريبة ولا يُرسل لأي خادم. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- مكتبة الخرائط لا تحتاج تخزينًا خارجيًا (الكاش في مجلد التطبيق): نمنع أي إذن تخزين قد تضيفه المكتبة -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
     <!-- إشعارات اختيارية (تُطلب بإذن صريح من المستخدم على أندرويد 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- مطلوب من Start.io على API 31+ (معرّف الإعلانات). يمكن إزالته إذا عُطّلت الإعلانات نهائيًا. -->

@@ -18,7 +18,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
@@ -66,15 +68,7 @@ fun FlagLogo(size: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier) {
             val cx = this.size.width * 0.16f
             val cy = this.size.height / 2
             val r = this.size.height * 0.1f
-            val star = Path()
-            for (i in 0 until 14) {
-                val rad = if (i % 2 == 0) r else r * 0.45f
-                val a = Math.PI / 7 * i - Math.PI / 2
-                val x = cx + (rad * cos(a)).toFloat()
-                val y = cy + (rad * sin(a)).toFloat()
-                if (i == 0) star.moveTo(x, y) else star.lineTo(x, y)
-            }
-            star.close()
+            val star = starPath(cx, cy, r)
             drawPath(star, Color.White)
         }
     }
@@ -111,19 +105,42 @@ fun SectionTitle(text: String, icon: ImageVector? = null, onDark: Boolean = fals
     }
 }
 
-/** صورة بتحميل تدريجي وصورة بديلة عند الفشل؛ لا تمدّد النسبة (Crop). فشل الصورة لا يؤثر على الصفحة. */
-@Composable
-fun PlaceImage(url: String?, alt: String?, categoryId: String?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
-    val placeholder: @Composable () -> Unit = {
-        Box(Modifier.fillMaxSize().background(Color(0xFFDDE3EE)), contentAlignment = Alignment.Center) {
-            Icon(categoryIcon(categoryId), null, tint = JG.Navy.copy(alpha = .55f), modifier = Modifier.size(36.dp))
-        }
+/** نجمة سباعية (رمز العلم) كمسار؛ تُستخدم بحذر كتفصيل صغير فقط. */
+fun starPath(cx: Float, cy: Float, r: Float): Path {
+    val star = Path()
+    for (i in 0 until 14) {
+        val rad = if (i % 2 == 0) r else r * 0.45f
+        val a = Math.PI / 7 * i - Math.PI / 2
+        val x = cx + (rad * cos(a)).toFloat()
+        val y = cy + (rad * sin(a)).toFloat()
+        if (i == 0) star.moveTo(x, y) else star.lineTo(x, y)
     }
-    Box(modifier.clip(RoundedCornerShape(14.dp))) {
-        if (url.isNullOrBlank()) placeholder() else SubcomposeAsyncImage(
+    star.close()
+    return star
+}
+
+/** بديل أنيق عند غياب صورة موثوقة: لا نختلق صورة. أيقونة التصنيف على خلفية كحلية مع خطوط نجمة خافتة. */
+@Composable
+fun FallbackArt(categoryId: String?, modifier: Modifier = Modifier, iconSize: androidx.compose.ui.unit.Dp = 36.dp) {
+    Box(modifier.background(Brush.linearGradient(listOf(JG.NavyCard, JG.NavyDark))), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawPath(starPath(size.width * 0.82f, size.height * 0.22f, size.minDimension * 0.34f), Color.White.copy(alpha = 0.06f))
+        }
+        Icon(categoryIcon(categoryId), null, tint = Color.White.copy(alpha = .85f), modifier = Modifier.size(iconSize))
+    }
+}
+
+/** صورة بتحميل تدريجي وبديل أنيق عند الفشل أو الغياب. لا تمدّد النسبة (Crop). فشل الصورة لا يؤثر على الصفحة. */
+@Composable
+fun PlaceImage(
+    url: String?, alt: String?, categoryId: String?, modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop, shape: Shape = RoundedCornerShape(14.dp),
+) {
+    Box(modifier.clip(shape)) {
+        if (url.isNullOrBlank()) FallbackArt(categoryId, Modifier.fillMaxSize()) else SubcomposeAsyncImage(
             model = url, contentDescription = alt, contentScale = contentScale, modifier = Modifier.fillMaxSize(),
-            loading = { Box(Modifier.fillMaxSize().background(Color(0xFFE9EDF4)), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) } },
-            error = { placeholder() },
+            loading = { SkeletonBox(Modifier.fillMaxSize(), radius = 0) },
+            error = { FallbackArt(categoryId, Modifier.fillMaxSize()) },
         )
     }
 }
@@ -134,32 +151,6 @@ fun StatusBadge(text: String, color: Color, icon: ImageVector? = null) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) { Icon(icon, null, tint = color, modifier = Modifier.size(14.dp)); Spacer(Modifier.width(4.dp)) }
             Text(text, color = color, fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
-fun PlaceCard(place: Place, favorite: Boolean, onFavorite: () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(onClick = onClick, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = Color.White, shadowElevation = 2.dp) {
-        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PlaceImage(place.coverUrl, place.coverAlt ?: place.displayName, place.category, Modifier.size(92.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(place.displayName, style = MaterialTheme.typography.titleMedium, color = JG.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                val cat = Category.fromId(place.category)?.label ?: ""
-                Text(listOfNotNull(cat, place.displayRegion).joinToString(" · "), color = JG.Muted, style = MaterialTheme.typography.bodyMedium)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (place.isSample) StatusBadge(tr("تجريبي", "Sample"), JG.Amber)
-                    else if (place.verifiedAt == null) StatusBadge(tr("يحتاج توثيقًا", "Needs verification"), JG.Amber)
-                    if (place.kidsFriendly == true) StatusBadge(tr("للأطفال", "Kids"), JG.Green, Icons.Filled.ChildCare)
-                }
-            }
-            IconButton(onClick = onFavorite, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    contentDescription = if (favorite) tr("إزالة من المفضلة", "Remove from favorites") else tr("إضافة إلى المفضلة", "Add to favorites"),
-                    tint = JG.Red,
-                )
-            }
         }
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +51,29 @@ private fun open(ctx: Context, intent: Intent) {
 private fun safeWebUri(url: String): Uri? =
     Uri.parse(url).takeIf { it.scheme == "https" || it.scheme == "http" }
 
+@Composable
+private fun Module(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.width(4.dp).height(18.dp).background(JG.Red))
+            Text(title, style = MaterialTheme.typography.titleMedium, color = JG.NavyDark)
+        }
+        content()
+    }
+}
+
+@Composable
+private fun InfoRow(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+        Icon(icon, null, tint = JG.Red, modifier = Modifier.size(22.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge, color = JG.Ink)
+    }
+}
+
+/**
+ * صفحة المكان («دليل متخصص»): صورة واسعة بنص فوق تدرّج داكن، ثم حالة التوثيق، ثم إجراءات تظهر فقط عند توفر بياناتها الصالحة،
+ * ثم وحدات تختلف بحسب نوع المكان (أثري/سياحي، مطعم، خدمة حكومية/رقمية، عام). لا أقسام فارغة ولا معلومات وهمية.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun PlaceScreen(vm: AppViewModel, placeId: String, onBack: () -> Unit) {
@@ -72,84 +96,108 @@ fun PlaceScreen(vm: AppViewModel, placeId: String, onBack: () -> Unit) {
     val images = media.filter { !it.isVideo }
     val videos = media.filter { it.isVideo }
     val cover = place.coverUrl ?: images.firstOrNull { it.isCover }?.url ?: images.firstOrNull()?.url
+    val cat = Category.fromId(place.category)
+    val isVisit = cat == Category.TOURISM
+    val isFood = cat == Category.RESTAURANTS
+    val isService = cat in setOf(Category.GOVERNMENT, Category.SERVICES, Category.APPS, Category.EDUCATION, Category.JOBS, Category.NEWS)
+    val webUri = place.website?.let { safeWebUri(it) }
+    val hasMap = (place.lat != null && place.lng != null) || place.address != null
 
     Column(Modifier.fillMaxSize().background(JG.Surface).verticalScroll(rememberScrollState())) {
         Box {
-            PlaceImage(cover, place.coverAlt ?: place.displayName, place.category, Modifier.fillMaxWidth().height(260.dp))
+            PlaceImage(cover, place.coverAlt ?: place.displayName, place.category, Modifier.fillMaxWidth().height(320.dp), shape = RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
+            Box(Modifier.matchParentSize().background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to JG.NavyDark.copy(alpha = .85f)), RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp)))
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 CircleIcon(Icons.AutoMirrored.Filled.ArrowBack, tr("رجوع", "Back"), onClick = onBack)
-                CircleIcon(if (place.id in favorites) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, tr("المفضلة", "Favorites")) { vm.toggleFavorite(place.id) }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircleIcon(Icons.Filled.Share, tr("مشاركة المكان", "Share place")) {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, place.displayName)
+                            putExtra(Intent.EXTRA_TEXT, sharePlaceText(place))
+                        }
+                        open(ctx, Intent.createChooser(send, tr("مشاركة المكان", "Share place")))
+                    }
+                    CircleIcon(if (place.id in favorites) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (place.id in favorites) tr("إزالة من المحفوظات", "Remove from saved") else tr("حفظ المكان", "Save place")) { vm.toggleFavorite(place.id) }
+                }
+            }
+            Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(listOfNotNull(cat?.label, place.displayRegion).joinToString(" · "), color = Color.White.copy(alpha = .9f), style = MaterialTheme.typography.labelMedium)
+                Text(place.displayName, color = Color.White, style = MaterialTheme.typography.headlineSmall)
             }
         }
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(place.displayName, style = MaterialTheme.typography.headlineMedium, color = JG.NavyDark)
-            Text(listOfNotNull(Category.fromId(place.category)?.label, place.displayRegion).joinToString(" · "), color = JG.Muted, style = MaterialTheme.typography.bodyLarge)
 
-            // حالة التوثيق: واضحة دائمًا
-            if (place.isSample) InfoBanner(tr("هذه بيانات تجريبية غير موثّقة. لا تعتمد عليها قبل التحقق من المصدر الرسمي.", "This is unverified sample data. Do not rely on it before checking the official source."))
-            else if (place.verifiedAt == null) InfoBanner(tr("معلومات هذا المكان لم تُوثّق بعد وقد تحتاج إلى تحديث.", "This place's information has not been verified yet and may need updating."))
-            else StatusBadge(tr("موثّق بتاريخ", "Verified on") + " " + SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(place.verifiedAt)), JG.Green, Icons.Filled.Verified)
-            if (catalog.fromCache) InfoBanner(tr("المعلومات محفوظة على جهازك وقد تكون قديمة.", "This information is saved on your device and may be outdated."), icon = Icons.Filled.CloudOff)
-
-            // أزرار الإجراءات: اتصال / خريطة / مشاركة / موقع
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (place.phone != null) BigButton(tr("اتصال", "Call"), Icons.Filled.Call, Modifier.weight(1f)) { open(ctx, Intent(Intent.ACTION_DIAL, Uri.parse("tel:${place.phone}"))) }
-                if (place.lat != null && place.lng != null || place.address != null)
-                    BigButton(tr("الخريطة", "Map"), Icons.Filled.Map, Modifier.weight(1f), outlined = true) {
-                        val q = if (place.lat != null && place.lng != null) "geo:${place.lat},${place.lng}?q=${place.lat},${place.lng}(${Uri.encode(place.displayName)})"
-                        else "geo:0,0?q=${Uri.encode(place.name + " " + place.address.orEmpty())}"
-                        open(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(q)))
-                    }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                BigButton(tr("مشاركة", "Share"), Icons.Filled.Share, Modifier.weight(1f), outlined = true) {
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_SUBJECT, place.displayName)
-                        putExtra(Intent.EXTRA_TEXT, sharePlaceText(place))
-                    }
-                    open(ctx, Intent.createChooser(send, tr("مشاركة المكان", "Share place")))
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+            // حالة التوثيق (دائمًا واضحة)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    VerifyBadge(place)
+                    place.verifiedAt?.let { Text(tr("بتاريخ", "on") + " " + SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(it)), color = JG.Muted, style = MaterialTheme.typography.bodySmall) }
                 }
-                place.website?.let { w -> safeWebUri(w)?.let { u -> BigButton(tr("الموقع", "Website"), Icons.Filled.Language, Modifier.weight(1f), outlined = true) { open(ctx, Intent(Intent.ACTION_VIEW, u)) } } }
+                if (place.isSample) InfoBanner(tr("هذه بيانات تجريبية غير موثّقة. لا تعتمد عليها قبل التحقق من المصدر الرسمي.", "This is unverified sample data. Do not rely on it before checking the official source."))
+                else if (place.verifiedAt == null) InfoBanner(tr("معلومات هذا المكان لم تُوثّق بعد وقد تحتاج إلى تحديث.", "This place's information has not been verified yet and may need updating."))
+                if (catalog.fromCache) InfoBanner(tr("المعلومات محفوظة على جهازك وقد تكون قديمة.", "This information is saved on your device and may be outdated."), icon = Icons.Filled.CloudOff)
             }
 
-            if (place.displayDescription.isNotBlank()) Text(place.displayDescription, style = MaterialTheme.typography.bodyLarge)
+            // الإجراءات: لا يظهر إلا ما له بيانات صالحة
+            val actions = (if (Geo.validPhone(place.phone)) 1 else 0) + (if (hasMap) 1 else 0) + (if (webUri != null) 1 else 0)
+            if (actions > 0) FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                if (Geo.validPhone(place.phone)) BigButton(tr("اتصال", "Call"), Icons.Filled.Call) { open(ctx, Intent(Intent.ACTION_DIAL, Uri.parse("tel:${place.phone!!.trim()}"))) }
+                if (hasMap) BigButton(tr("الخريطة", "Map"), Icons.Filled.Map, outlined = true) {
+                    val q = if (place.lat != null && place.lng != null) "geo:${place.lat},${place.lng}?q=${place.lat},${place.lng}(${Uri.encode(place.displayName)})"
+                    else "geo:0,0?q=${Uri.encode(place.displayName + " " + place.address.orEmpty())}"
+                    open(ctx, Intent(Intent.ACTION_VIEW, Uri.parse(q)))
+                }
+                if (webUri != null) BigButton(if (isService) tr("الرابط الرسمي", "Official link") else tr("الموقع الإلكتروني", "Website"), Icons.Filled.Language, outlined = true) { open(ctx, Intent(Intent.ACTION_VIEW, webUri)) }
+            }
 
-            // معلومات تظهر فقط عند توفرها
+            // وحدة التعريف: عنوانها بحسب النوع
+            if (place.displayDescription.isNotBlank()) Module(
+                when { isVisit -> tr("نبذة", "About"); isFood -> tr("عن المكان", "About"); isService -> tr("وصف الخدمة", "About this service"); else -> tr("نبذة", "About") }
+            ) { Text(place.displayDescription, style = MaterialTheme.typography.bodyLarge, color = JG.Ink) }
+
+            // تنبيهات (الزيارة/الخدمة)
+            place.alerts.forEach { InfoBanner(it, Color(0xFFB3261E), icon = Icons.Filled.Warning) }
+
+            // معلومات تظهر فقط عند توفرها، بعنوان يناسب النوع
             val rows = buildList {
-                place.phone?.let { add(Icons.Filled.Call to tr("الهاتف: $it", "Phone: $it")) }
+                if (Geo.validPhone(place.phone)) add(Icons.Filled.Call to tr("الهاتف: ${place.phone}", "Phone: ${place.phone}"))
                 place.address?.let { add(Icons.Filled.LocationOn to tr("العنوان: $it", "Address: $it")) }
                 place.openingHours?.let { add(Icons.Filled.Schedule to tr("ساعات العمل: $it", "Opening hours: $it")) }
                 place.priceLevel?.let { lv -> add(Icons.Filled.Payments to tr("السعر", "Price") + ": ${PriceLevels.all.firstOrNull { it.first == lv }?.second ?: ""}" + (place.priceNote?.let { " — $it" } ?: "")) }
                 place.kidsFriendly?.let { add(Icons.Filled.ChildCare to if (it) tr("مناسب للأطفال", "Suitable for children") else tr("غير مخصص للأطفال", "Not designed for children")) }
                 if (place.ageGroups.isNotEmpty()) add(Icons.Filled.Groups to tr("الأعمار: ", "Ages: ") + place.ageGroups.joinToString(tr("، ", ", ")) { id -> AgeGroups.all.firstOrNull { it.first == id }?.second ?: id })
             }
-            if (rows.isNotEmpty()) Surface(shape = RoundedCornerShape(16.dp), color = Color.White) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    rows.forEach { (ic, t) -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { Icon(ic, null, tint = JG.Red); Text(t, style = MaterialTheme.typography.bodyLarge) } }
+            if (rows.isNotEmpty()) Module(
+                when { isVisit -> tr("معلومات الزيارة", "Visitor information"); isFood -> tr("معلومات المطعم", "Restaurant info"); isService -> tr("معلومات التواصل والخدمة", "Contact & service info"); else -> tr("معلومات", "Information") }
+            ) { rows.forEach { (ic, t) -> InfoRow(ic, t) } }
+
+            if (place.activities.isNotEmpty()) Module(if (isVisit) tr("أهم المعالم والأنشطة", "Highlights & activities") else tr("الأنشطة", "Activities")) {
+                place.activities.forEach { InfoRow(Icons.Filled.Check, it) }
+            }
+            if (place.features.isNotEmpty()) Module(tr("المرافق", "Facilities")) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    place.features.forEach { id -> SuggestionChip({}, { Text(Features.all.firstOrNull { it.first == id }?.second ?: id) }) }
                 }
             }
-            if (place.features.isNotEmpty()) { Text(tr("المرافق", "Facilities"), style = MaterialTheme.typography.titleMedium); FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { place.features.forEach { id -> SuggestionChip({}, { Text(Features.all.firstOrNull { it.first == id }?.second ?: id) }) } } }
-            if (place.activities.isNotEmpty()) { Text(tr("الأنشطة", "Activities"), style = MaterialTheme.typography.titleMedium); place.activities.forEach { Text("• $it", style = MaterialTheme.typography.bodyLarge) } }
-            if (place.alerts.isNotEmpty()) place.alerts.forEach { InfoBanner(it, Color(0xFFB3261E), icon = Icons.Filled.Warning) }
 
-            // معرض الصور
-            if (images.isNotEmpty()) {
-                Text(tr("معرض الصور", "Photo gallery"), style = MaterialTheme.typography.titleMedium)
+            // معرض الصور والفيديو
+            if (images.isNotEmpty()) Module(tr("معرض الصور", "Photo gallery")) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(images.size) { i -> PlaceImage(images[i].thumbUrl ?: images[i].url, images[i].alt ?: images[i].title, place.category, Modifier.size(120.dp).clickable { viewer = i }) }
+                    items(images.size) { i -> PlaceImage(images[i].thumbUrl ?: images[i].url, images[i].alt ?: images[i].title, place.category, Modifier.size(width = 150.dp, height = 110.dp).clickable { viewer = i }, shape = RoundedCornerShape(14.dp)) }
                 }
             }
-            // الفيديوهات: لا تُحمَّل إلا عند الضغط على التشغيل
-            videos.forEach { v -> VideoCard(v, place.category) }
+            if (videos.isNotEmpty()) Module(tr("فيديو", "Video")) { videos.forEach { v -> VideoCard(v, place.category) } }
 
-            // المصدر
-            Text(
-                tr("المصدر: ", "Source: ") + (place.sourceName ?: tr("غير محدد", "Not specified")) + (place.sourceUrl?.let { "\n$it" } ?: ""),
-                color = JG.Muted, style = MaterialTheme.typography.bodyMedium,
-            )
-            TextButton(onClick = { showReport = true }) { Icon(Icons.Filled.Flag, null); Spacer(Modifier.width(6.dp)); Text(tr("الإبلاغ عن معلومة خاطئة أو رابط لا يعمل", "Report wrong info or a broken link")) }
-            Spacer(Modifier.height(24.dp))
+            // المصدر + الإبلاغ
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    tr("المصدر: ", "Source: ") + (place.sourceName ?: tr("غير محدد", "Not specified")) + (place.sourceUrl?.let { "\n$it" } ?: ""),
+                    color = JG.Muted, style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = { showReport = true }) { Icon(Icons.Filled.Flag, null); Spacer(Modifier.width(6.dp)); Text(tr("الإبلاغ عن معلومة خاطئة أو رابط لا يعمل", "Report wrong info or a broken link")) }
+            }
+            Spacer(Modifier.height(16.dp))
         }
     }
 

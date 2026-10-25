@@ -7,7 +7,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.unit.sp
+import jo.guide.app.R
 
 object JG {
     val NavyDark = Color(0xFF0A2347)
@@ -32,15 +34,28 @@ private val scheme = lightColorScheme(
     error = Color(0xFFB3261E),
 )
 
-/** نصوص أكبر قليلًا من الافتراضي لسهولة القراءة لجميع الأعمار. الخط: خط النظام العربي (Roboto/Noto). */
+/** خط Tajawal (ترخيص OFL، الملفات في res/font) يدعم العربية واللاتينية؛ أحجام مريحة للقراءة لجميع الأعمار. */
+val Tajawal = FontFamily(
+    Font(R.font.tajawal_regular, FontWeight.Normal),
+    Font(R.font.tajawal_medium, FontWeight.Medium),
+    Font(R.font.tajawal_bold, FontWeight.Bold),
+)
+
+private fun t(w: FontWeight, size: Int, line: Int) = TextStyle(fontFamily = Tajawal, fontWeight = w, fontSize = size.sp, lineHeight = line.sp)
+
 private val typography = Typography(
-    headlineMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 38.sp),
-    titleLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.Bold, fontSize = 22.sp, lineHeight = 30.sp),
-    titleMedium = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, lineHeight = 26.sp),
-    bodyLarge = TextStyle(fontFamily = FontFamily.Default, fontSize = 17.sp, lineHeight = 27.sp),
-    bodyMedium = TextStyle(fontFamily = FontFamily.Default, fontSize = 15.sp, lineHeight = 24.sp),
-    labelLarge = TextStyle(fontFamily = FontFamily.Default, fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
-    labelMedium = TextStyle(fontFamily = FontFamily.Default, fontSize = 13.sp),
+    displaySmall = t(FontWeight.Bold, 34, 44),
+    headlineMedium = t(FontWeight.Bold, 28, 38),
+    headlineSmall = t(FontWeight.Bold, 24, 34),
+    titleLarge = t(FontWeight.Bold, 22, 30),
+    titleMedium = t(FontWeight.Medium, 18, 26),
+    titleSmall = t(FontWeight.Medium, 16, 24),
+    bodyLarge = t(FontWeight.Normal, 17, 27),
+    bodyMedium = t(FontWeight.Normal, 15, 24),
+    bodySmall = t(FontWeight.Normal, 13, 20),
+    labelLarge = t(FontWeight.Medium, 16, 22),
+    labelMedium = t(FontWeight.Medium, 13, 18),
+    labelSmall = t(FontWeight.Medium, 11, 16),
 )
 
 @Composable

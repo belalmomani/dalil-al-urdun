@@ -75,15 +75,42 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     loading = false, places = page.places, regions = regions, hasMore = page.next != null,
                     fromCache = page.fromCache, isSample = repo.isSample,
                 )
+                if (page.next != null) loadRemainingPages()
             } catch (e: Exception) {
                 _catalog.update { it.copy(loading = false, error = tr("تعذّر تحميل البيانات. تحقق من الاتصال ثم أعد المحاولة.", "Could not load data. Check your connection and try again.")) }
             }
         }
     }
 
+    private var loadingRest = false
+
+    /**
+     * تحميل بقية الصفحات في الخلفية كي تكون أعداد المحافظات والخريطة دقيقة (بيانات نصية صغيرة).
+     * يتوقف عند أول فشل؛ يبقى زر/تمرير الاستكشاف قادرًا على المتابعة عبر loadMore().
+     */
+    private fun loadRemainingPages() {
+        if (loadingRest) return
+        loadingRest = true
+        viewModelScope.launch {
+            try {
+                var guard = 0
+                while (guard++ < 60) {
+                    val c = cursor ?: break
+                    val page = repo.loadPlaces(c)
+                    cursor = page.next
+                    _catalog.update { it.copy(places = it.places + page.places, hasMore = page.next != null) }
+                }
+            } catch (_: Exception) {
+                // نكتفي بما حُمّل
+            } finally {
+                loadingRest = false
+            }
+        }
+    }
+
     fun loadMore() {
         val c = cursor ?: return
-        if (_catalog.value.loadingMore) return
+        if (loadingRest || _catalog.value.loadingMore) return
         viewModelScope.launch {
             _catalog.update { it.copy(loadingMore = true) }
             try {
